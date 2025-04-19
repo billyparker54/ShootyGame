@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>p5.js Game - Shooty Game (Live Coin HUD Icon)</title>
+    <title>p5.js Game - Shooty Game (Homing Applies to More Weapons)</title>
     <style>
         body { padding: 0; margin: 0; display: flex; justify-content: center; align-items: center; flex-direction: column; background-color: #2c3e50; /* Darker background */ font-family: 'Arial', sans-serif; /* Cleaner font */}
         canvas { margin-top: 20px; border: 2px solid #34495e; /* Border matching background */}
@@ -19,129 +19,288 @@
 
     <script>
         // --- Constants ---
-        const BASE_PLAYER_SPEED = 3.5; const BASE_BULLET_DAMAGE = 1; const BULLET_SPEED = 5;
-        const SHOOT_COOLDOWN_MS = 300; const PLAYER_RADIUS = 15; const BULLET_RADIUS = 4;
-        const PLAYER_MAX_LIVES = 3;
-        const BASE_ENEMY_RADIUS = 10; const BASE_ENEMY_HP = 1; const BASE_ENEMY_SPEED = 1.5;
-        const BASE_ENEMY_SPAWN_RATE = 90; const ENEMY_COLOR = [200, 0, 50]; const BASE_ENEMY_REWARD = 1;
-        const BLUE_ENEMY_RADIUS = 12; const BASE_BLUE_ENEMY_HP = 3; const BASE_BLUE_ENEMY_SPEED = BASE_ENEMY_SPEED * 1.5;
-        const BASE_BLUE_ENEMY_SPAWN_INTERVAL_SEC = 12; const BLUE_ENEMY_COLOR = [0, 100, 255]; const BASE_BLUE_ENEMY_REWARD = 5;
-        const POWERUP_COLOR = [128, 0, 128]; const POWERUP_WIDTH = 15; const POWERUP_HEIGHT = 15;
-        const POWERUP_SPAWN_INTERVAL_SEC = 7; const POWERUP_TYPE_HOMING = "homing";
-        const MAX_STEER_FORCE = 0.4; const TIME_STOP_DURATION_SEC = 2.0; const TIME_STOP_CHANCE = 0.05;
-        const TIME_STOP_CHECK_INTERVAL_MS = 1000; const TIME_STOP_KEY = 'e'; const AUTO_FIRE_TOGGLE_KEY = 'q';
-        const ADMIN_CHEAT_CODE = "sigma"; const ADMIN_PANEL_TOGGLE_KEY = 'p'; const WAVE_DURATION_SEC = 30;
-        const BASE_STRENGTH_COST = 20; const COST_INCREASE_STRENGTH = 15; const BASE_SPEED_COST = 15;
-        const COST_INCREASE_SPEED = 10; const AUTO_FIRE_COST = 100;
-        const PLAYER_COLOR = [0, 150, 255]; const BRONZE_COLOR = [205, 127, 50]; const BACKGROUND_COLOR = [220, 220, 220];
-        const LASER_SIGHT_COLOR = [255, 0, 0]; const BRONZE_HIGHLIGHT_COLOR = [255, 224, 150];
-        const BULLET_OUTLINE_COLOR = [0, 0, 0]; const BULLET_OUTLINE_WEIGHT = 1; const LASER_SIGHT_WEIGHT = 1.5;
-        const COIN_COLOR = [255, 215, 0]; const COIN_OUTLINE_COLOR = [184, 134, 11]; const COIN_ICON_RADIUS = 9;
-        const SCORE_TEXT_COLOR = [0, 0, 0]; const SCORE_TEXT_SIZE = 18; const INDICATOR_TEXT_COLOR = [255, 255, 255];
+        // Gameplay Constants
+        const BASE_PLAYER_SPEED = 3.5;
+        const BASE_BULLET_DAMAGE = 1; // Base damage for standard/shotgun/MG bullets
+        const BULLET_SPEED = 5;
+        const SHOOT_COOLDOWN_MS = 300; // Default cooldown
+        const PLAYER_RADIUS = 15;
+        const BULLET_RADIUS = 4;
+        const PLAYER_MAX_LIVES = 3; // NOTE: This constant is no longer used to limit buying lives
+        const PLAYER_HIT_DURATION = 30;
+
+        // Enemy Constants
+        const BASE_ENEMY_RADIUS = 10;
+        const BASE_ENEMY_HP = 1;
+        const BASE_ENEMY_SPEED = 1.5;
+        const BASE_ENEMY_SPAWN_RATE = 90;
+        const ENEMY_COLOR = [200, 0, 50]; // Red
+        const BASE_ENEMY_REWARD = 1;
+        const ENEMY_HIT_DURATION = 10;
+
+        // Blue Enemy Constants
+        const BLUE_ENEMY_RADIUS = 12;
+        const BASE_BLUE_ENEMY_HP = 3;
+        const BASE_BLUE_ENEMY_SPEED = BASE_ENEMY_SPEED * 1.5;
+        const BASE_BLUE_ENEMY_SPAWN_INTERVAL_SEC = 12;
+        const BLUE_ENEMY_COLOR = [0, 100, 255]; // Blue
+        const BASE_BLUE_ENEMY_REWARD = 5;
+
+        // Powerup Constants
+        const POWERUP_COLOR = [128, 0, 128]; // Purple
+        const POWERUP_WIDTH = 15;
+        const POWERUP_HEIGHT = 15;
+        const POWERUP_SPAWN_INTERVAL_SEC = 7;
+        const POWERUP_TYPE_HOMING = "homing";
+
+        // Homing Bullet Constants
+        const MAX_STEER_FORCE = 0.4;
+
+        // Time Stop Constants
+        const TIME_STOP_DURATION_SEC = 2.0;
+        const TIME_STOP_CHANCE = 0.05;
+        const TIME_STOP_CHECK_INTERVAL_MS = 1000;
+        const TIME_STOP_KEY = 'e';
+
+        // Control Constants
+        const AUTO_FIRE_TOGGLE_KEY = 'q';
+        const RETURN_TO_MENU_KEY = 'm';
+        const NEXT_WAVE_KEY = ' ';
+        // Weapon switching keys removed from gameplay
+
+        // Admin Constants
+        const ADMIN_CHEAT_CODE = "sigma";
+        const ADMIN_PANEL_TOGGLE_KEY = 'p';
+
+        // Wave Constants
+        const WAVE_DURATION_SEC = 30;
+
+        // Weapon Constants
+        const WEAPON_STANDARD = 'standard';
+        const WEAPON_BOUNCY = 'bouncy';
+        const WEAPON_SHOTGUN = 'shotgun';
+        const WEAPON_MACHINE_GUN = 'machine_gun';
+        const BOUNCY_BULLET_BOUNCES = 3;
+        const BOUNCY_BULLET_DAMAGE = 1;
+        const BOUNCY_BULLET_COLOR = [0, 255, 0];
+        const SHOTGUN_BULLET_COUNT = 3;
+        const SHOTGUN_SPREAD_ANGLE = Math.PI / 9;
+        const SHOTGUN_COOLDOWN_MS = 2000;
+        const MACHINE_GUN_COOLDOWN_MS = SHOOT_COOLDOWN_MS / 2;
+        const MACHINE_GUN_LAG_MS = 1500;
+
+        // Shop/Upgrade Costs
+        const BASE_STRENGTH_COST = 20; // Affects standard/shotgun/MG damage
+        const COST_INCREASE_STRENGTH = 15;
+        const BASE_SPEED_COST = 15;
+        const COST_INCREASE_SPEED = 10;
+        const AUTO_FIRE_COST = 75;
+        const BOUNCY_GUN_COST = 40;
+        const SHOTGUN_COST = 65;
+        const MACHINE_GUN_COST = 100;
+        const BUY_LIFE_COST = 40;
+
+        // Color Palette
+        const PLAYER_COLOR = [0, 150, 255];
+        const BRONZE_COLOR = [205, 127, 50]; // Standard/Shotgun/MG bullet color
+        const BACKGROUND_COLOR = [220, 220, 220];
+        const LASER_SIGHT_COLOR = [255, 0, 0];
+        const BRONZE_HIGHLIGHT_COLOR = [255, 224, 150];
+        const BULLET_OUTLINE_COLOR = [0, 0, 0];
+        const COIN_COLOR = [255, 215, 0];
+        const COIN_OUTLINE_COLOR = [184, 134, 11];
+        const GAME_OVER_BG_COLOR = [40, 40, 50];
+        const GAME_OVER_TITLE_COLOR = [231, 76, 60];
+        const GAME_OVER_TEXT_COLOR = [236, 240, 241];
+        const HIT_FLASH_COLOR = [255, 255, 255];
+
+        // Text Colors & Sizes
+        const SCORE_TEXT_COLOR = [0, 0, 0];
+        const SCORE_TEXT_SIZE = 18;
+        const INDICATOR_TEXT_COLOR = [255, 255, 255];
         const INDICATOR_TEXT_SIZE = 16;
-        const SHOP_BG_COLOR = [52, 235, 161, 230]; const SHOP_TEXT_COLOR = [0, 0, 0]; const SHOP_TITLE_TEXT_SIZE = 28;
-        const SHOP_ITEM_TEXT_SIZE = 16; const SHOP_COST_TEXT_SIZE = 14; const SHOP_CARD_COLOR = [255, 255, 255, 40];
-        const SHOP_CARD_STROKE = [0, 0, 0, 50]; const SHOP_CARD_MARGIN = 15; const SHOP_CARD_PADDING = 10;
+        const LIVES_TEXT_COLOR = [255, 0, 0];
+
+        // Shop UI Colors & Sizes
+        const SHOP_BG_COLOR = [52, 235, 161, 230];
+        const SHOP_TEXT_COLOR = [0, 0, 0];
+        const SHOP_TITLE_TEXT_SIZE = 28;
+        const SHOP_CATEGORY_HEADER_SIZE = 18;
+        const SHOP_ITEM_TEXT_SIZE = 16;
+        const SHOP_COST_TEXT_SIZE = 14;
+        const SHOP_CARD_COLOR = [255, 255, 255, 40];
+        const SHOP_CARD_STROKE = [0, 0, 0, 50];
         const GRAY_TEXT_COLOR = [80, 80, 80];
+
+        // Shop Button Colors & Sizes
+        const SHOP_BUTTON_WIDTH = 90;
+        const SHOP_BUTTON_HEIGHT = 30;
+        const SHOP_BUTTON_COLOR_ACTIVE = [0, 180, 0]; // Green (Used for Buy/Equip)
+        const SHOP_BUTTON_COLOR_HOVER = [0, 220, 0]; // Lighter Green
+        const SHOP_BUTTON_COLOR_INACTIVE = [100, 100, 100]; // Gray (Used for Unaffordable/Equipped/Max)
+        const SHOP_BUTTON_TEXT_COLOR = [255, 255, 255];
+
+        // Menu Colors
         const MENU_BG_COLOR = [60, 60, 80];
         const MENU_TITLE_COLOR = [236, 240, 241];
-        const MENU_COIN_TEXT_COLOR = [241, 196, 15]; // Gold color for coin text (used in HUD too)
+        const MENU_COIN_TEXT_COLOR = [241, 196, 15];
         const MENU_ADMIN_TEXT_COLOR = [255, 100, 255];
 
-        // --- Menu Button Colors ---
+        // Menu Button Colors
         const BUTTON_PLAY_COLOR = [46, 204, 113]; const BUTTON_PLAY_HOVER = [39, 174, 96];
-        const BUTTON_SHOP_COLOR = [241, 196, 15]; const BUTTON_SHOP_HOVER = [243, 156, 18];
         const BUTTON_RESET_COLOR = [231, 76, 60]; const BUTTON_RESET_HOVER = [192, 57, 43];
         const BUTTON_TEXT_COLOR = [255, 255, 255];
-        const PARTICLE_COLOR = [39, 174, 96, 180];
 
+        // Particle Constants (For Enemy Destruction)
+        const EXPLOSION_PARTICLE_COUNT = 15;
+        const EXPLOSION_PARTICLE_LIFESPAN = 30;
+        const EXPLOSION_PARTICLE_SPEED = 2.5;
+        const EXPLOSION_PARTICLE_SIZE_MIN = 2;
+        const EXPLOSION_PARTICLE_SIZE_MAX = 5;
+
+        // Admin Panel Colors & Layout
         const ADMIN_PANEL_BG_COLOR = [80, 60, 100, 240];
-        const ADMIN_PANEL_TEXT_COLOR = [255, 255, 255]; const LIVES_TEXT_COLOR = [255, 0, 0];
-        const SHOP_BUTTON_WIDTH = 90; const SHOP_BUTTON_HEIGHT = 30; const SHOP_BUTTON_COLOR_ACTIVE = [0, 180, 0];
-        const SHOP_BUTTON_COLOR_HOVER = [0, 220, 0]; const SHOP_BUTTON_COLOR_INACTIVE = [100, 100, 100]; const SHOP_BUTTON_TEXT_COLOR = [255, 255, 255];
-        const CONFIRM_BG_COLOR = [40, 40, 50, 240]; const CONFIRM_BOX_COLOR = [70, 70, 90]; const CONFIRM_TEXT_COLOR = [255, 255, 255];
-        const CONFIRM_YES_COLOR = [200, 0, 0]; const CONFIRM_YES_HOVER = [230, 50, 50]; const CONFIRM_NO_COLOR = [80, 80, 100]; const CONFIRM_NO_HOVER = [110, 110, 130];
-        const CONFIRM_BUTTON_WIDTH = 80; const CONFIRM_BUTTON_HEIGHT = 35;
+        const ADMIN_PANEL_TEXT_COLOR = [255, 255, 255];
+        const ADMIN_PANEL_X_MARGIN = 50;
+        const ADMIN_PANEL_Y_START = 80;
+        const ADMIN_PANEL_LINE_HEIGHT = 28;
+        const ADMIN_PANEL_VALUE_X_OFFSET = 250;
+
+        // Confirmation Dialog Colors & Sizes
+        const CONFIRM_BG_COLOR = [40, 40, 50, 240];
+        const CONFIRM_BOX_COLOR = [70, 70, 90];
+        const CONFIRM_TEXT_COLOR = [255, 255, 255];
+        const CONFIRM_YES_COLOR = [200, 0, 0]; const CONFIRM_YES_HOVER = [230, 50, 50];
+        const CONFIRM_NO_COLOR = [80, 80, 100]; const CONFIRM_NO_HOVER = [110, 110, 130];
+        const CONFIRM_BUTTON_WIDTH = 80;
+        const CONFIRM_BUTTON_HEIGHT = 35;
+
+        // Style Constants
+        const BULLET_OUTLINE_WEIGHT = 1;
+        const LASER_SIGHT_WEIGHT = 1.5;
+        const COIN_ICON_RADIUS = 9;
+        const SHOP_CARD_MARGIN = 15;
+        const SHOP_CARD_PADDING = 10;
+        const SHOP_HEADER_MARGIN_BOTTOM = 8;
+        const SHOP_CATEGORY_MARGIN_TOP = 20;
+        const SHOP_SCROLL_SPEED = 15;
 
         // Game State Constants
-        const STATE_MENU = 0; const STATE_PLAYING = 1; const STATE_GAME_OVER = 2; const STATE_SHOP = 3; const STATE_CONFIRM_RESET = 4;
+        const STATE_MENU = 0;
+        const STATE_PLAYING = 1;
+        const STATE_GAME_OVER = 2;
+        const STATE_SHOP = 3;
+        const STATE_CONFIRM_RESET = 4;
 
         // --- Global Variables ---
-        let player = null; let bullets = []; let enemies = []; let powerups = []; let spawn_timer = 0;
-        let keys_pressed = new Set(); let current_state = STATE_MENU; let auto_aim_target = null;
+        let player = null;
+        let bullets = [];
+        let enemies = [];
+        let powerups = [];
+        let explosionParticles = [];
+        let aimHistory = [];
+        let current_state = STATE_MENU;
+        let spawn_timer = 0;
+        let last_blue_spawn_time_ms = 0;
+        let last_powerup_spawn_time_ms = 0;
+        let last_shot_time_ms = 0;
+        let wave_timer_start_ms = 0;
+        let time_stop_end_time_ms = 0;
+        let last_timestop_chance_check_time_ms = 0;
         let player_lives = PLAYER_MAX_LIVES;
         let strength_level = parseInt(localStorage.getItem('shootyGameStrengthLevel') || '0', 10);
         let speed_level = parseInt(localStorage.getItem('shootyGameSpeedLevel') || '0', 10);
         let total_coins = parseInt(localStorage.getItem('shootyGameTotalCoins') || '0', 10);
         let auto_fire_purchased = localStorage.getItem('shootyGameAutoFirePurchased') === 'true';
+        let bouncyGunPurchased = localStorage.getItem('shootyGameBouncyGunPurchased') === 'true';
+        let shotgunPurchased = localStorage.getItem('shootyGameShotgunPurchased') === 'true';
+        let machineGunPurchased = localStorage.getItem('shootyGameMachineGunPurchased') === 'true';
+        let current_wave = 0;
+        let current_run_score = 0;
+        let current_player_speed;
+        let current_bullet_damage;
+        let current_enemy_spawn_rate;
+        let current_blue_spawn_interval_sec;
+        let keys_pressed = new Set();
+        let auto_aim_target = null;
         let auto_fire_active = auto_fire_purchased;
-        let current_wave = 0; let wave_timer_start_ms = 0; let wave_completed_flag = false;
-        let current_enemy_spawn_rate = BASE_ENEMY_SPAWN_RATE; let current_blue_spawn_interval_sec = BASE_BLUE_ENEMY_SPAWN_INTERVAL_SEC;
-        let current_run_score = 0; let current_player_speed; let current_bullet_damage;
-        let last_blue_spawn_time_ms = 0; let last_shot_time_ms = 0; let last_powerup_spawn_time_ms = 0;
-        let homing_shot_ready = false; let time_stop_ready = false; let time_stop_active = false;
-        let time_stop_end_time_ms = 0; let last_timestop_chance_check_time_ms = 0;
+        let homing_shot_ready = false;
+        let time_stop_ready = false;
+        let time_stop_active = false;
+        let wave_completed_flag = false;
+        let playerIsHit = false;
+        let playerHitTimer = 0;
+        let currentWeaponType = WEAPON_STANDARD;
         let playButton = { x: 0, y: 0, w: 150, h: 50, isHovered: false };
-        let shopButtonMenu = { x: 0, y: 0, w: 150, h: 50, isHovered: false };
         let resetButton = { x: 0, y: 0, w: 150, h: 40, isHovered: false };
         let strBuyButton = { x: 0, y: 0, w: SHOP_BUTTON_WIDTH, h: SHOP_BUTTON_HEIGHT, isHovered: false, isActive: false };
         let spdBuyButton = { x: 0, y: 0, w: SHOP_BUTTON_WIDTH, h: SHOP_BUTTON_HEIGHT, isHovered: false, isActive: false };
+        let buyLifeButton = { x: 0, y: 0, w: SHOP_BUTTON_WIDTH, h: SHOP_BUTTON_HEIGHT, isHovered: false, isActive: false };
         let autoBuyButton = { x: 0, y: 0, w: SHOP_BUTTON_WIDTH, h: SHOP_BUTTON_HEIGHT, isHovered: false, isActive: false };
+        let standardGunEquipButton = { x: 0, y: 0, w: SHOP_BUTTON_WIDTH, h: SHOP_BUTTON_HEIGHT, isHovered: false, isActive: false };
+        let bouncyGunBuyButton = { x: 0, y: 0, w: SHOP_BUTTON_WIDTH, h: SHOP_BUTTON_HEIGHT, isHovered: false, isActive: false };
+        let shotgunBuyButton = { x: 0, y: 0, w: SHOP_BUTTON_WIDTH, h: SHOP_BUTTON_HEIGHT, isHovered: false, isActive: false };
+        let machineGunBuyButton = { x: 0, y: 0, w: SHOP_BUTTON_WIDTH, h: SHOP_BUTTON_HEIGHT, isHovered: false, isActive: false };
+        // Removed placeholderUpgradeButton
+        // Removed placeholderWeapon2Button
         let confirmYesButton = { x: 0, y: 0, w: CONFIRM_BUTTON_WIDTH, h: CONFIRM_BUTTON_HEIGHT, isHovered: false };
         let confirmNoButton = { x: 0, y: 0, w: CONFIRM_BUTTON_WIDTH, h: CONFIRM_BUTTON_HEIGHT, isHovered: false };
-        let is_admin = false; let cheat_input_buffer = ""; let admin_panel_open = false;
-
-        // --- Tone.js Audio Variables ---
+        let is_admin = false;
+        let cheat_input_buffer = "";
+        let admin_panel_open = false;
         let menuSynth = null;
         let menuSequence = null;
         let isAudioSetup = false;
-
-        // --- HTML Audio Variable ---
         let htmlCoinSound;
+        let shopScrollY = 0;
+        let shopContentHeight = 0;
+        let shopVisibleStartY = 80;
+        let shopVisibleHeight = 0;
+        let shopScrollableHeight = 0;
 
-        // --- Particle System Variables ---
-        let shopParticles = [];
-        const PARTICLE_LIFESPAN = 70;
-        const PARTICLE_SPAWN_INTERVAL = 5;
-        const PARTICLE_GRAVITY = 0.04;
-        const PARTICLE_INITIAL_VEL_Y = -1.8;
-        const PARTICLE_INITIAL_VEL_X_RANGE = 1.0;
-
-        // --- Particle Class ---
-        class Particle {
-            constructor(x, y) {
-                this.pos = createVector(x, y);
-                this.vel = createVector(random(-PARTICLE_INITIAL_VEL_X_RANGE, PARTICLE_INITIAL_VEL_X_RANGE), PARTICLE_INITIAL_VEL_Y + random(-0.5, 0.2));
-                this.acc = createVector(0, PARTICLE_GRAVITY);
-                this.lifespan = PARTICLE_LIFESPAN;
-                this.color = PARTICLE_COLOR;
-                this.char = '$';
-                this.size = random(12, 18);
-            }
-            update() { this.vel.add(this.acc); this.pos.add(this.vel); this.lifespan -= 1; }
-            display() { let alpha = map(this.lifespan, 0, PARTICLE_LIFESPAN, 0, this.color[3]); fill(this.color[0], this.color[1], this.color[2], alpha); noStroke(); textAlign(CENTER, CENTER); textSize(this.size); text(this.char, this.pos.x, this.pos.y); }
+        // --- Particle Class (Adapted for Explosions) ---
+        class ExplosionParticle {
+            constructor(x, y, col) { this.pos = createVector(x, y); let angle = random(TWO_PI); let speed = random(EXPLOSION_PARTICLE_SPEED * 0.5, EXPLOSION_PARTICLE_SPEED); this.vel = createVector(cos(angle) * speed, sin(angle) * speed); this.acc = createVector(0, 0); this.lifespan = EXPLOSION_PARTICLE_LIFESPAN; this.color = col; this.size = random(EXPLOSION_PARTICLE_SIZE_MIN, EXPLOSION_PARTICLE_SIZE_MAX); }
+            update() { this.vel.mult(0.95); this.pos.add(this.vel); this.lifespan -= 1; }
+            display() { let alpha = map(this.lifespan, 0, EXPLOSION_PARTICLE_LIFESPAN, 0, 255); fill(this.color[0], this.color[1], this.color[2], alpha); noStroke(); ellipse(this.pos.x, this.pos.y, this.size); }
             isDead() { return this.lifespan <= 0; }
         }
 
-
         // --- Helper Functions ---
         function calculate_player_speed() { return BASE_PLAYER_SPEED * (1.0 + speed_level * 0.20); }
-        function calculate_bullet_damage() { return BASE_BULLET_DAMAGE + strength_level; }
+        function calculate_bullet_damage() { return BASE_BULLET_DAMAGE + strength_level; } // Standard/Shotgun/MG bullet damage
         function get_strength_cost() { return BASE_STRENGTH_COST + strength_level * COST_INCREASE_STRENGTH; }
         function get_speed_cost() { return BASE_SPEED_COST + speed_level * COST_INCREASE_SPEED; }
-
         current_player_speed = calculate_player_speed();
         current_bullet_damage = calculate_bullet_damage();
-
-        // --- Other Helper Functions (find_closest_enemy, find_enemy_closest_by_angle) ---
         function find_closest_enemy(playerX, playerY, enemy_list) { let closest_enemy = null; let min_dist_sq = Infinity; for (let enemy of enemy_list) { if (!enemy || typeof enemy.x === 'undefined' || typeof enemy.y === 'undefined' || enemy.hp <= 0) continue; let dx = enemy.x - playerX; let dy = enemy.y - playerY; let dist_sq = dx * dx + dy * dy; if (dist_sq < min_dist_sq) { min_dist_sq = dist_sq; closest_enemy = enemy; } } return closest_enemy; }
         function find_enemy_closest_by_angle(startX, startY, direction_vx, direction_vy, enemy_list) { if (!enemy_list || enemy_list.length === 0) return null; let shot_angle = atan2(direction_vy, direction_vx); let best_target = null; let min_angle_diff = Infinity; for (let enemy of enemy_list) { if (!enemy || typeof enemy.x === 'undefined' || typeof enemy.y === 'undefined') continue; let enemy_dx = enemy.x - startX; let enemy_dy = enemy.y - startY; let enemy_angle = atan2(enemy_dy, enemy_dx); let diff = shot_angle - enemy_angle; while (diff <= -PI) diff += TWO_PI; while (diff > PI) diff -= TWO_PI; let angle_diff = abs(diff); if (angle_diff < min_angle_diff) { min_angle_diff = angle_diff; best_target = enemy; } } return best_target; }
+        // Modified helper to get lagged aim direction relative to past player position
+        function getLaggedAim(lagMs) {
+            let targetTime = millis() - lagMs;
+            let closestEntry = null;
+            let smallestDiff = Infinity;
+            for (let i = aimHistory.length - 1; i >= 0; i--) { let entry = aimHistory[i]; let diff = abs(entry.timestamp - targetTime); if (diff < smallestDiff) { smallestDiff = diff; closestEntry = entry; } else { break; } }
+            if (closestEntry) { return { dx: closestEntry.aimX - closestEntry.playerX, dy: closestEntry.aimY - closestEntry.playerY }; } else { return null; }
+        }
+
 
         // --- Classes ---
         class Player { constructor(x, y, radius, speed, col) { this.x = x; this.y = y; this.radius = radius; this.speed = speed; this.color = col; } update() { let e_spd = this.speed; if (keys_pressed.has('w')||keys_pressed.has(UP_ARROW)){this.y-=e_spd;} if(keys_pressed.has('s')||keys_pressed.has(DOWN_ARROW)){this.y+=e_spd;} if(keys_pressed.has('a')||keys_pressed.has(LEFT_ARROW)){this.x-=e_spd;} if(keys_pressed.has('d')||keys_pressed.has(RIGHT_ARROW)){this.x+=e_spd;} this.x=constrain(this.x,this.radius,width-this.radius); this.y=constrain(this.y,this.radius,height-this.radius); } display() { fill(this.color[0], this.color[1], this.color[2]); noStroke(); ellipse(this.x, this.y, this.radius * 2); } }
-        class Bullet { constructor(x, y, vx, vy, radius, col) { this.x = x; this.y = y; this.vx = vx; this.vy = vy; this.radius = radius; this.color = col; } update() { this.x += this.vx; this.y += this.vy; } display() { stroke(BULLET_OUTLINE_COLOR[0],BULLET_OUTLINE_COLOR[1],BULLET_OUTLINE_COLOR[2]); strokeWeight(BULLET_OUTLINE_WEIGHT); fill(this.color[0],this.color[1],this.color[2]); ellipse(this.x,this.y,this.radius*2); noStroke(); fill(BRONZE_HIGHLIGHT_COLOR[0],BRONZE_HIGHLIGHT_COLOR[1],BRONZE_HIGHLIGHT_COLOR[2]); let hs=this.radius; let ho=this.radius*0.35; ellipse(this.x-ho,this.y-ho,hs,hs); } is_offscreen() { return !(this.x>-this.radius && this.x<width+this.radius && this.y>-this.radius && this.y<height+this.radius); } }
+        class Bullet {
+            constructor(x, y, vx, vy, radius, col) { this.x = x; this.y = y; this.vx = vx; this.vy = vy; this.radius = radius; this.color = col; this.isDead = false; }
+            update() { this.x += this.vx; this.y += this.vy; }
+            display() { stroke(BULLET_OUTLINE_COLOR[0],BULLET_OUTLINE_COLOR[1],BULLET_OUTLINE_COLOR[2]); strokeWeight(BULLET_OUTLINE_WEIGHT); fill(this.color[0],this.color[1],this.color[2]); ellipse(this.x,this.y,this.radius*2); noStroke(); fill(BRONZE_HIGHLIGHT_COLOR[0],BRONZE_HIGHLIGHT_COLOR[1],BRONZE_HIGHLIGHT_COLOR[2]); let hs=this.radius; let ho=this.radius*0.35; ellipse(this.x-ho,this.y-ho,hs,hs); }
+            is_offscreen() { return !(this.x>-this.radius && this.x<width+this.radius && this.y>-this.radius && this.y<height+this.radius); }
+        }
         class HomingBullet extends Bullet { constructor(x, y, vx, vy, radius, col, initial_target) { super(x, y, vx, vy, radius, col); this.target = initial_target; this.steer_force = MAX_STEER_FORCE; } update() { try { if (this.target && (typeof this.target.hp==='undefined' || this.target.hp<=0 || typeof this.target.x==='undefined' || typeof this.target.y==='undefined')) {this.target=null;} if (this.target) { let ddx=this.target.x-this.x; let ddy=this.target.y-this.y; let dist=sqrt(ddx*ddx+ddy*ddy); if (dist>0) { ddx/=dist; ddy/=dist; let dvx=ddx*BULLET_SPEED; let dvy=ddy*BULLET_SPEED; let svx=dvx-this.vx; let svy=dvy-this.vy; let sms=svx*svx+svy*svy; if(sms > this.steer_force*this.steer_force && sms > 0){ let sc=this.steer_force/sqrt(sms); svx*=sc; svy*=sc; } this.vx+=svx; this.vy+=svy; let css=this.vx*this.vx+this.vy*this.vy; if(css>BULLET_SPEED*BULLET_SPEED && css>0){ let sc=BULLET_SPEED/sqrt(css); this.vx*=sc; this.vy*=sc;}}} super.update();} catch(e){console.error("HomingBullet Update Error:", e); this.target=null; super.update();} } }
-        class Enemy { constructor(x, y, radius, speed, hp, col, reward) { this.x=x; this.y=y; this.radius=radius; this.speed=speed; this.hp=hp; this.color=col; this.reward=reward; this.max_hp=hp; } update(target_x, target_y) { if(typeof target_x!=='number' || typeof target_y!=='number') return; let dx=target_x-this.x; let dy=target_y-this.y; let dist=sqrt(dx*dx+dy*dy); if (dist>0){let vx=(dx/dist)*this.speed; let vy=(dy/dist)*this.speed; this.x+=vx; this.y+=vy;}} display() { fill(this.color[0], this.color[1], this.color[2]); noStroke(); ellipse(this.x, this.y, this.radius * 2); } take_damage(damage_amount) { this.hp -= damage_amount; return this.hp <= 0; } }
+        class BouncyBullet extends Bullet {
+            constructor(x, y, vx, vy) { super(x, y, vx, vy, BULLET_RADIUS + 1, BOUNCY_BULLET_COLOR); this.bouncesLeft = BOUNCY_BULLET_BOUNCES; this.damage = BOUNCY_BULLET_DAMAGE; }
+            update() { super.update(); let bouncedWall = false; if ((this.x < this.radius && this.vx < 0) || (this.x > width - this.radius && this.vx > 0)) { this.vx *= -1; bouncedWall = true; this.x = constrain(this.x, this.radius, width - this.radius); } if ((this.y < this.radius && this.vy < 0) || (this.y > height - this.radius && this.vy > 0)) { this.vy *= -1; bouncedWall = true; this.y = constrain(this.y, this.radius, height - this.radius); } if (bouncedWall) { this.bouncesLeft--; if (this.bouncesLeft <= 0) { this.isDead = true; } } }
+            handleEnemyBounce() { this.bouncesLeft--; if (this.bouncesLeft <= 0) { this.isDead = true; } this.vx *= -1; this.vy *= -1; }
+            display() { fill(this.color[0], this.color[1], this.color[2]); noStroke(); ellipse(this.x, this.y, this.radius * 2); }
+        }
+        class Enemy { constructor(x, y, radius, speed, hp, col, reward) { this.x=x; this.y=y; this.radius=radius; this.speed=speed; this.hp=hp; this.color=col; this.reward=reward; this.max_hp=hp; this.isHit = false; this.hitTimer = 0; } update(target_x, target_y) { if (this.isHit) { this.hitTimer--; if (this.hitTimer <= 0) { this.isHit = false; } } if(typeof target_x!=='number' || typeof target_y!=='number') return; let dx=target_x-this.x; let dy=target_y-this.y; let dist=sqrt(dx*dx+dy*dy); if (dist>0){let vx=(dx/dist)*this.speed; let vy=(dy/dist)*this.speed; this.x+=vx; this.y+=vy;}} display() { if (this.isHit) { fill(HIT_FLASH_COLOR); } else { fill(this.color[0], this.color[1], this.color[2]); } noStroke(); ellipse(this.x, this.y, this.radius * 2); } take_damage(damage_amount) { this.hp -= damage_amount; let destroyed = this.hp <= 0; if (!destroyed) { this.isHit = true; this.hitTimer = ENEMY_HIT_DURATION; } return destroyed; } }
         class PowerUp { constructor(x, y, w, h, color, type) { this.x=x; this.y=y; this.width=w; this.height=h; this.color=color; this.type=type; } display() { fill(this.color[0], this.color[1], this.color[2]); noStroke(); rect(this.x, this.y, this.width, this.height); } }
 
         // --- Spawning / Collision Helpers ---
@@ -152,345 +311,480 @@
 
         // --- Game/Wave Start Function ---
         function start_new_game_or_wave(wave_number) {
-            console.log(`Starting Wave ${wave_number}...`);
-            current_wave = wave_number;
-            current_enemy_spawn_rate = max(20, BASE_ENEMY_SPAWN_RATE - (current_wave - 1) * 4);
-            current_blue_spawn_interval_sec = max(4, BASE_BLUE_ENEMY_SPAWN_INTERVAL_SEC - floor((current_wave - 1) / 2));
-            console.log(`Wave ${current_wave} Difficulty: Spawn Rate=${current_enemy_spawn_rate}, Blue Interval=${current_blue_spawn_interval_sec}s`);
-            current_player_speed = calculate_player_speed();
-            current_bullet_damage = calculate_bullet_damage();
-            auto_fire_active = auto_fire_purchased;
-            let px=width/2; let py=height/2;
-            player = new Player(px,py,PLAYER_RADIUS,current_player_speed,PLAYER_COLOR);
-            bullets=[]; enemies=[]; powerups=[]; keys_pressed=new Set(); spawn_timer=0; auto_aim_target=null;
-            wave_timer_start_ms=millis(); last_blue_spawn_time_ms=wave_timer_start_ms; last_powerup_spawn_time_ms=wave_timer_start_ms;
-            homing_shot_ready=false; time_stop_ready=false; time_stop_active=false; time_stop_end_time_ms=0; last_timestop_chance_check_time_ms=wave_timer_start_ms; wave_completed_flag=false;
-            if(wave_number===1){current_run_score=0; player_lives = PLAYER_MAX_LIVES; console.log("Starting new game. Lives reset to:", player_lives);}
-            current_state=STATE_PLAYING;
-            shopParticles = []; // Clear particles when starting game
-            console.log("Game/Wave reset complete. Current Lives:", player_lives, "Auto-Fire active:", auto_fire_active);
+            console.log(`Starting Wave ${wave_number}...`); current_wave = wave_number; current_enemy_spawn_rate = max(20, BASE_ENEMY_SPAWN_RATE - (current_wave - 1) * 4); current_blue_spawn_interval_sec = max(4, BASE_BLUE_ENEMY_SPAWN_INTERVAL_SEC - floor((current_wave - 1) / 2)); console.log(`Wave ${current_wave} Difficulty: Spawn Rate=${current_enemy_spawn_rate}, Blue Interval=${current_blue_spawn_interval_sec}s`); current_player_speed = calculate_player_speed(); current_bullet_damage = calculate_bullet_damage(); auto_fire_active = auto_fire_purchased; let px=width/2; let py=height/2; player = new Player(px,py,PLAYER_RADIUS,current_player_speed,PLAYER_COLOR); bullets=[]; enemies=[]; powerups=[]; keys_pressed=new Set(); spawn_timer=0; auto_aim_target=null; wave_timer_start_ms=millis(); last_blue_spawn_time_ms=wave_timer_start_ms; last_powerup_spawn_time_ms=wave_timer_start_ms; homing_shot_ready=false; time_stop_ready=false; time_stop_active=false; time_stop_end_time_ms=0; last_timestop_chance_check_time_ms=wave_timer_start_ms; wave_completed_flag=false; playerIsHit = false; playerHitTimer = 0; explosionParticles = []; aimHistory = []; // Clear aim history
+             if(wave_number===1){current_run_score=0; player_lives = PLAYER_MAX_LIVES; console.log("Starting new game. Lives reset to:", player_lives);} current_state=STATE_PLAYING; console.log("Game/Wave reset complete. Current Lives:", player_lives, "Auto-Fire active:", auto_fire_active);
          }
 
         // --- Function to Setup Tone.js Audio ---
-        function setupMenuAudio() {
-            if (isAudioSetup) return;
-            try {
-                menuSynth = new Tone.FMSynth({ harmonicity: 2, modulationIndex: 5, detune: 0, oscillator: { type: "square" }, envelope: { attack: 0.01, decay: 0.1, sustain: 0.3, release: 0.5 }, modulation: { type: "square" }, modulationEnvelope: { attack: 0.01, decay: 0.1, sustain: 0.1, release: 0.1 } }).toDestination();
-                menuSynth.volume.value = -12;
-                const melody = [ ["G#3", "8n"], null, "G3", "F3", "D#3", null, "D#3", null, ["G#3", "8n"], null, "G3", "F3", "D#3", null, "D#3", null, ["G#3", "8n"], null, "G3", "F3", "D#3", null, "D#3", null, ["G#3", "8n"], null, "G3", "F3", ["D#3", "4n"], null, null, null ];
-                menuSequence = new Tone.Sequence((time, note) => { if (note) { menuSynth.triggerAttackRelease(note, "16n", time); } }, melody, "8n");
-                menuSequence.loop = true;
-                Tone.Transport.bpm.value = 128;
-                isAudioSetup = true;
-                console.log("Menu audio setup complete.");
-            } catch (e) { console.error("Error setting up Tone.js:", e); }
-        }
+        function setupMenuAudio() { if (isAudioSetup) return; try { menuSynth = new Tone.FMSynth({ harmonicity: 2, modulationIndex: 5, detune: 0, oscillator: { type: "square" }, envelope: { attack: 0.01, decay: 0.1, sustain: 0.3, release: 0.5 }, modulation: { type: "square" }, modulationEnvelope: { attack: 0.01, decay: 0.1, sustain: 0.1, release: 0.1 } }).toDestination(); menuSynth.volume.value = -12; const melody = [ ["G#3", "8n"], null, "G3", "F3", "D#3", null, "D#3", null, ["G#3", "8n"], null, "G3", "F3", "D#3", null, "D#3", null, ["G#3", "8n"], null, "G3", "F3", "D#3", null, "D#3", null, ["G#3", "8n"], null, "G3", "F3", ["D#3", "4n"], null, null, null ]; menuSequence = new Tone.Sequence((time, note) => { if (note) { menuSynth.triggerAttackRelease(note, "16n", time); } }, melody, "8n"); menuSequence.loop = true; Tone.Transport.bpm.value = 128; isAudioSetup = true; console.log("Menu audio setup complete."); } catch (e) { console.error("Error setting up Tone.js:", e); } }
 
         // --- p5.js Event Handlers ---
         function keyPressed() {
-            let keyLower = key.toLowerCase(); if (is_admin && admin_panel_open) { let sc=false; if(key==='1'){if(keyIsDown(SHIFT)){if(strength_level>0)strength_level--; sc=true;}else{strength_level++; sc=true;}}else if(key==='2'){if(keyIsDown(SHIFT)){if(speed_level>0)speed_level--; sc=true;}else{speed_level++; sc=true;}}else if(key==='3'){auto_fire_purchased=!auto_fire_purchased; auto_fire_active=auto_fire_purchased; sc=true;}else if(key==='4'){total_coins+=1000; sc=true;}else if(key==='5'){if(keyIsDown(SHIFT)){if(player_lives>0)player_lives--; sc=true;}else{player_lives++; sc=true;} console.log("ADMIN: Lives set to", player_lives); } else if(keyLower===ADMIN_PANEL_TOGGLE_KEY){admin_panel_open=false; console.log("ADMIN PANEL: Closed"); return false;} if(sc){current_player_speed=calculate_player_speed(); current_bullet_damage=calculate_bullet_damage(); localStorage.setItem('shootyGameStrengthLevel',strength_level.toString()); localStorage.setItem('shootyGameSpeedLevel',speed_level.toString()); localStorage.setItem('shootyGameTotalCoins',total_coins.toString()); localStorage.setItem('shootyGameAutoFirePurchased',auto_fire_purchased?'true':'false'); console.log(`ADMIN Change - Str:${strength_level}, Spd:${speed_level}, Coins:${total_coins}, AutoFire:${auto_fire_purchased}, Lives:${player_lives}`);} return false; } if (keyLower === ADMIN_PANEL_TOGGLE_KEY && is_admin) { admin_panel_open = !admin_panel_open; console.log("ADMIN PANEL:", admin_panel_open ? "Opened" : "Closed"); if (admin_panel_open) auto_aim_target = null; return false; } if (current_state === STATE_MENU && !is_admin) { if (keyLower.length === 1 && keyLower >= 'a' && keyLower <= 'z') { cheat_input_buffer += keyLower; if (cheat_input_buffer.length > ADMIN_CHEAT_CODE.length) { cheat_input_buffer = cheat_input_buffer.substring(cheat_input_buffer.length - ADMIN_CHEAT_CODE.length); } if (cheat_input_buffer === ADMIN_CHEAT_CODE) { is_admin = true; console.log("ADMIN MODE ACTIVATED!"); cheat_input_buffer = ""; } } else { cheat_input_buffer = ""; } }
-            // Shop Key Handling
+            let keyLower = key.toLowerCase();
+
+            // --- Admin Panel Input Handling ---
+            if (is_admin && admin_panel_open) {
+                let statChanged = false;
+                if (key === '1') { if (keyIsDown(SHIFT)) { if (strength_level > 0) strength_level--; statChanged = true; } else { strength_level++; statChanged = true; } }
+                else if (key === '2') { if (keyIsDown(SHIFT)) { if (speed_level > 0) speed_level--; statChanged = true; } else { speed_level++; statChanged = true; } }
+                else if (key === '3') { auto_fire_purchased = !auto_fire_purchased; auto_fire_active = auto_fire_purchased; statChanged = true; }
+                else if (key === '4') { total_coins += 1000; statChanged = true; }
+                else if (key === '5') { if (keyIsDown(SHIFT)) { if (player_lives > 0) player_lives--; statChanged = true; } else { player_lives++; statChanged = true; } console.log("ADMIN: Lives set to", player_lives); } // No upper limit check needed here
+                else if (key === '6') { bouncyGunPurchased = !bouncyGunPurchased; statChanged = true; }
+                else if (key === '7') { shotgunPurchased = !shotgunPurchased; statChanged = true; }
+                else if (key === '8') { machineGunPurchased = !machineGunPurchased; statChanged = true; }
+                else if (keyLower === ADMIN_PANEL_TOGGLE_KEY) { admin_panel_open = false; console.log("ADMIN PANEL: Closed"); return false; }
+                if (statChanged) {
+                    current_player_speed = calculate_player_speed();
+                    current_bullet_damage = calculate_bullet_damage();
+                    localStorage.setItem('shootyGameStrengthLevel', strength_level.toString());
+                    localStorage.setItem('shootyGameSpeedLevel', speed_level.toString());
+                    localStorage.setItem('shootyGameTotalCoins', total_coins.toString());
+                    localStorage.setItem('shootyGameAutoFirePurchased', auto_fire_purchased ? 'true' : 'false');
+                    localStorage.setItem('shootyGameBouncyGunPurchased', bouncyGunPurchased ? 'true' : 'false');
+                    localStorage.setItem('shootyGameShotgunPurchased', shotgunPurchased ? 'true' : 'false');
+                    localStorage.setItem('shootyGameMachineGunPurchased', machineGunPurchased ? 'true' : 'false');
+                    console.log(`ADMIN Change - Str:${strength_level}, Spd:${speed_level}, Coins:${total_coins}, AutoFire:${auto_fire_purchased}, Bouncy:${bouncyGunPurchased}, Shotgun:${shotgunPurchased}, MG:${machineGunPurchased}, Lives:${player_lives}`);
+                }
+                return false;
+            }
+
+            // --- Admin Cheat Code Input (Menu Only) ---
+            if (current_state === STATE_MENU && !is_admin) { if (keyLower.length === 1 && keyLower >= 'a' && keyLower <= 'z') { cheat_input_buffer += keyLower; if (cheat_input_buffer.length > ADMIN_CHEAT_CODE.length) { cheat_input_buffer = cheat_input_buffer.substring(cheat_input_buffer.length - ADMIN_CHEAT_CODE.length); } if (cheat_input_buffer === ADMIN_CHEAT_CODE) { is_admin = true; console.log("ADMIN MODE ACTIVATED!"); cheat_input_buffer = ""; } } else { cheat_input_buffer = ""; } }
+            // --- Toggle Admin Panel ---
+            if (keyLower === ADMIN_PANEL_TOGGLE_KEY && is_admin) { admin_panel_open = !admin_panel_open; console.log("ADMIN PANEL:", admin_panel_open ? "Opened" : "Closed"); if (admin_panel_open) auto_aim_target = null; return false; }
+
             switch (current_state) {
                 case STATE_MENU: break;
                 case STATE_SHOP:
-                    if (keyLower === 'n' && wave_completed_flag) {
-                        start_new_game_or_wave(current_wave + 1);
-                        return false;
-                    }
-                    if ("n".includes(keyLower)) return false;
+                    if (key === NEXT_WAVE_KEY && wave_completed_flag) { start_new_game_or_wave(current_wave + 1); shopScrollY = 0; return false; }
+                    if (key === NEXT_WAVE_KEY) return false;
                     break;
                 case STATE_GAME_OVER:
                     if (key === ' ') { start_new_game_or_wave(1); return false; }
-                    else if (keyLower === 'u') { current_state = STATE_SHOP; shopParticles = []; wave_completed_flag = false; return false; }
-                    if (" u".includes(keyLower) || key === ' ') return false;
+                    else if (keyLower === RETURN_TO_MENU_KEY) { current_state = STATE_MENU; return false; }
+                    if (" m".includes(keyLower) || key === ' ') return false;
                     break;
                 case STATE_PLAYING:
                     if (admin_panel_open) return false;
+                    // --- Weapon Switching REMOVED ---
+                    // Other Controls
                     if (keyLower === TIME_STOP_KEY && time_stop_ready && !time_stop_active) { time_stop_ready = false; time_stop_active = true; time_stop_end_time_ms = millis() + TIME_STOP_DURATION_SEC * 1000; console.log("TIME STOP ACTIVATED!"); return false; }
                     else if (keyLower === AUTO_FIRE_TOGGLE_KEY && auto_fire_purchased) { auto_fire_active = !auto_fire_active; console.log("Auto-Fire Toggled. Active:", auto_fire_active); auto_aim_target = null; return false; }
-                    if (keyCode === UP_ARROW || keyCode === DOWN_ARROW || keyCode === LEFT_ARROW || keyCode === RIGHT_ARROW) { keys_pressed.add(keyCode); }
-                    else { keys_pressed.add(keyLower); }
+                    // Movement
+                    if (keyCode === UP_ARROW || keyCode === DOWN_ARROW || keyCode === LEFT_ARROW || keyCode === RIGHT_ARROW) { keys_pressed.add(keyCode); } else { keys_pressed.add(keyLower); }
+                    // Prevent default for game keys (Removed weapon switch keys)
                     if (key === ' ' || keyLower === TIME_STOP_KEY || keyLower === AUTO_FIRE_TOGGLE_KEY || keyCode === UP_ARROW || keyCode === DOWN_ARROW || keyCode === LEFT_ARROW || keyCode === RIGHT_ARROW || 'wasd'.includes(keyLower)) { return false; }
                     break;
-                case STATE_CONFIRM_RESET:
-                    break;
+                case STATE_CONFIRM_RESET: break;
             }
          }
-        function keyReleased() {
-             if (current_state === STATE_PLAYING) { let kl=key.toLowerCase(); if(keyCode===UP_ARROW||keyCode===DOWN_ARROW||keyCode===LEFT_ARROW||keyCode===RIGHT_ARROW){keys_pressed.delete(keyCode);}else{keys_pressed.delete(kl);}}
-         }
-        function mousePressed() {
-             // --- Start Tone.js Audio Context ---
-             if (!isAudioSetup && typeof Tone !== 'undefined') { if (Tone.context.state !== 'running') { Tone.start().then(() => { console.log("Audio context started."); setupMenuAudio(); if (current_state === STATE_MENU && menuSequence && Tone.Transport.state !== 'started') { Tone.Transport.start(); menuSequence.start(0); console.log("Menu music started on click."); } }).catch(e => console.error("Error starting Tone context:", e)); } else { setupMenuAudio(); if (current_state === STATE_MENU && menuSequence && Tone.Transport.state !== 'started') { Tone.Transport.start(); menuSequence.start(0); console.log("Menu music started (context running)."); } } }
-             // --- Play HTML Coin sound once ---
-             if (htmlCoinSound && htmlCoinSound.paused) { htmlCoinSound.play().catch(e => console.log("HTML Coin Sound autoplay prevented:", e)); htmlCoinSound.pause(); htmlCoinSound.currentTime = 0; }
+        function keyReleased() { if (current_state === STATE_PLAYING) { let kl=key.toLowerCase(); if(keyCode===UP_ARROW||keyCode===DOWN_ARROW||keyCode===LEFT_ARROW||keyCode===RIGHT_ARROW){keys_pressed.delete(keyCode);}else{keys_pressed.delete(kl);}} }
+        function mousePressed() { if (!isAudioSetup && typeof Tone !== 'undefined') { if (Tone.context.state !== 'running') { Tone.start().then(() => { console.log("Audio context started."); setupMenuAudio(); if (current_state === STATE_MENU && menuSequence && Tone.Transport.state !== 'started') { Tone.Transport.start(); menuSequence.start(0); console.log("Menu music started on click."); } }).catch(e => console.error("Error starting Tone context:", e)); } else { setupMenuAudio(); if (current_state === STATE_MENU && menuSequence && Tone.Transport.state !== 'started') { Tone.Transport.start(); menuSequence.start(0); console.log("Menu music started (context running)."); } } } if (htmlCoinSound && htmlCoinSound.paused) { htmlCoinSound.play().catch(e => console.log("HTML Coin Sound autoplay prevented:", e)); htmlCoinSound.pause(); htmlCoinSound.currentTime = 0; }
+            switch (current_state) {
+                case STATE_PLAYING:
+                    // Manual Fire (Disabled for Machine Gun)
+                    if (!auto_fire_active && player && !admin_panel_open && currentWeaponType !== WEAPON_MACHINE_GUN) {
+                        let ctm = millis();
+                        // Check weapon-specific cooldown
+                        let cooldown = (currentWeaponType === WEAPON_SHOTGUN) ? SHOTGUN_COOLDOWN_MS : SHOOT_COOLDOWN_MS;
 
-             // State-specific mouse logic
-             switch (current_state) {
-                 case STATE_PLAYING: if (!auto_fire_active && player && !admin_panel_open) { let ctm=millis(); if(ctm-last_shot_time_ms>=SHOOT_COOLDOWN_MS){ let dx=mouseX-player.x; let dy=mouseY-player.y; let dist=sqrt(dx*dx+dy*dy); if(dist>0){ let vx=(dx/dist)*BULLET_SPEED; let vy=(dy/dist)*BULLET_SPEED; let nb; if(homing_shot_ready){let te=find_enemy_closest_by_angle(player.x,player.y,vx,vy,enemies); nb=new HomingBullet(player.x,player.y,vx,vy,BULLET_RADIUS,BRONZE_COLOR,te); homing_shot_ready=false; console.log("Fired Homing Bullet!");}else{nb=new Bullet(player.x,player.y,vx,vy,BULLET_RADIUS,BRONZE_COLOR);} bullets.push(nb); last_shot_time_ms=ctm;}}} break;
-                 case STATE_MENU: if (!admin_panel_open) { if (playButton.isHovered) { start_new_game_or_wave(1); } else if (shopButtonMenu.isHovered) { current_state = STATE_SHOP; shopParticles = []; wave_completed_flag = false; } else if (resetButton.isHovered) { current_state = STATE_CONFIRM_RESET; shopParticles = []; console.log("Entering reset confirmation state."); } } break;
-                 case STATE_SHOP: if (!admin_panel_open) { if (strBuyButton.isHovered && strBuyButton.isActive) { let cost = get_strength_cost(); if (total_coins >= cost) { total_coins -= cost; strength_level++; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); localStorage.setItem('shootyGameStrengthLevel', strength_level.toString()); current_bullet_damage = calculate_bullet_damage(); console.log("Purchased Strength Level:", strength_level); } } else if (spdBuyButton.isHovered && spdBuyButton.isActive) { let cost = get_speed_cost(); if (total_coins >= cost) { total_coins -= cost; speed_level++; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); localStorage.setItem('shootyGameSpeedLevel', speed_level.toString()); current_player_speed = calculate_player_speed(); console.log("Purchased Speed Level:", speed_level); } } else if (autoBuyButton.isHovered && autoBuyButton.isActive) { if (!auto_fire_purchased && total_coins >= AUTO_FIRE_COST) { total_coins -= AUTO_FIRE_COST; auto_fire_purchased = true; auto_fire_active = true; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); localStorage.setItem('shootyGameAutoFirePurchased', 'true'); console.log("Purchased Auto-Fire."); } } } break;
-                 case STATE_GAME_OVER: break;
-                 case STATE_CONFIRM_RESET: if (confirmYesButton.isHovered) { console.log("Confirmed YES to reset."); console.log("Removing localStorage items..."); try { localStorage.removeItem('shootyGameTotalCoins'); localStorage.removeItem('shootyGameStrengthLevel'); localStorage.removeItem('shootyGameSpeedLevel'); localStorage.removeItem('shootyGameAutoFirePurchased'); console.log("localStorage items removed."); } catch (e) { console.error("Error removing items from localStorage:", e); } console.log("Resetting global variables..."); total_coins = 0; strength_level = 0; speed_level = 0; auto_fire_purchased = false; auto_fire_active = false; is_admin = false; admin_panel_open = false; cheat_input_buffer = ""; player_lives = PLAYER_MAX_LIVES; current_run_score = 0; console.log("Global variables reset."); console.log("Recalculating derived stats..."); current_player_speed = calculate_player_speed(); current_bullet_damage = calculate_bullet_damage(); console.log("Derived stats recalculated."); console.log("Data reset complete. Reloading..."); location.reload(); } else if (confirmNoButton.isHovered) { console.log("Cancelled reset."); current_state = STATE_MENU; } break;
+                        if (ctm - last_shot_time_ms >= cooldown) {
+                            let aimX = mouseX;
+                            let aimY = mouseY;
+                            let aimDX = aimX - player.x;
+                            let aimDY = aimY - player.y;
+
+                            let dist = sqrt(aimDX * aimDX + aimDY * aimDY);
+                            if (dist > 0) {
+                                let baseAngle = atan2(aimDY, aimDX);
+                                let baseVX = (aimDX / dist) * BULLET_SPEED;
+                                let baseVY = (aimDY / dist) * BULLET_SPEED;
+
+                                // Fire based on weapon type
+                                if (homing_shot_ready) { // Check Homing FIRST
+                                     let te = find_enemy_closest_by_angle(player.x, player.y, baseVX, baseVY, enemies);
+                                     bullets.push(new HomingBullet(player.x, player.y, baseVX, baseVY, BULLET_RADIUS, BRONZE_COLOR, te));
+                                     homing_shot_ready = false;
+                                     console.log("Fired Homing Bullet!");
+                                } else if (currentWeaponType === WEAPON_SHOTGUN) {
+                                    for (let i = 0; i < SHOTGUN_BULLET_COUNT; i++) {
+                                        let angleOffset = (SHOTGUN_SPREAD_ANGLE / (SHOTGUN_BULLET_COUNT > 1 ? SHOTGUN_BULLET_COUNT - 1 : 1)) * (i - (SHOTGUN_BULLET_COUNT - 1) / 2);
+                                        let fireAngle = baseAngle + angleOffset;
+                                        let vx = cos(fireAngle) * BULLET_SPEED;
+                                        let vy = sin(fireAngle) * BULLET_SPEED;
+                                        bullets.push(new Bullet(player.x, player.y, vx, vy, BULLET_RADIUS, BRONZE_COLOR));
+                                    }
+                                } else if (currentWeaponType === WEAPON_BOUNCY) {
+                                    bullets.push(new BouncyBullet(player.x, player.y, baseVX, baseVY));
+                                } else { // Standard weapon (Machine Gun excluded from manual fire)
+                                    bullets.push(new Bullet(player.x, player.y, baseVX, baseVY, BULLET_RADIUS, BRONZE_COLOR));
+                                }
+                                last_shot_time_ms = ctm; // Reset cooldown timer
+                            }
+                        }
+                    }
+                    break;
+                case STATE_MENU: if (!admin_panel_open) { if (playButton.isHovered) { start_new_game_or_wave(1); } else if (resetButton.isHovered) { current_state = STATE_CONFIRM_RESET; } } break;
+                case STATE_SHOP:
+                    if (!admin_panel_open) {
+                        let effectiveMouseY = mouseY - shopVisibleStartY + shopScrollY;
+                        let mouseInShopArea = mouseX > 0 && mouseX < width && mouseY > shopVisibleStartY && mouseY < shopVisibleStartY + shopVisibleHeight;
+                        if (mouseInShopArea) {
+                            // --- Shop Click Logic (Buy/Equip) ---
+                            if (strBuyButton.isHovered && strBuyButton.isActive) { let cost = get_strength_cost(); if (total_coins >= cost) { total_coins -= cost; strength_level++; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); localStorage.setItem('shootyGameStrengthLevel', strength_level.toString()); current_bullet_damage = calculate_bullet_damage(); console.log("Purchased Strength Level:", strength_level); } }
+                            else if (spdBuyButton.isHovered && spdBuyButton.isActive) { let cost = get_speed_cost(); if (total_coins >= cost) { total_coins -= cost; speed_level++; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); localStorage.setItem('shootyGameSpeedLevel', speed_level.toString()); current_player_speed = calculate_player_speed(); console.log("Purchased Speed Level:", speed_level); } }
+                            else if (buyLifeButton.isHovered && buyLifeButton.isActive) { // Buy Life Click
+                                if (total_coins >= BUY_LIFE_COST) { // No max check needed here anymore
+                                    total_coins -= BUY_LIFE_COST;
+                                    player_lives++;
+                                    localStorage.setItem('shootyGameTotalCoins', total_coins.toString());
+                                    console.log("Purchased 1 Life. Current lives:", player_lives);
+                                }
+                            }
+                            else if (autoBuyButton.isHovered && autoBuyButton.isActive && !auto_fire_purchased) { if (total_coins >= AUTO_FIRE_COST) { total_coins -= AUTO_FIRE_COST; auto_fire_purchased = true; auto_fire_active = true; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); localStorage.setItem('shootyGameAutoFirePurchased', 'true'); console.log("Purchased Auto-Fire."); } }
+                            // Bouncy Gun Purchase/Equip
+                            else if (bouncyGunBuyButton.isHovered && bouncyGunBuyButton.isActive) {
+                                if (!bouncyGunPurchased) { if (total_coins >= BOUNCY_GUN_COST) { total_coins -= BOUNCY_GUN_COST; bouncyGunPurchased = true; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); localStorage.setItem('shootyGameBouncyGunPurchased', 'true'); currentWeaponType = WEAPON_BOUNCY; console.log("Purchased Bouncy Gun."); } }
+                                else { currentWeaponType = WEAPON_BOUNCY; console.log("Equipped Bouncy Gun."); }
+                            }
+                            // Shotgun Purchase/Equip
+                            else if (shotgunBuyButton.isHovered && shotgunBuyButton.isActive) {
+                                if (!shotgunPurchased) { if (total_coins >= SHOTGUN_COST) { total_coins -= SHOTGUN_COST; shotgunPurchased = true; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); localStorage.setItem('shootyGameShotgunPurchased', 'true'); currentWeaponType = WEAPON_SHOTGUN; console.log("Purchased Shotgun."); } }
+                                else { currentWeaponType = WEAPON_SHOTGUN; console.log("Equipped Shotgun."); }
+                            }
+                            // Machine Gun Purchase/Equip
+                            else if (machineGunBuyButton.isHovered && machineGunBuyButton.isActive) {
+                                if (!machineGunPurchased) { if (total_coins >= MACHINE_GUN_COST) { total_coins -= MACHINE_GUN_COST; machineGunPurchased = true; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); localStorage.setItem('shootyGameMachineGunPurchased', 'true'); currentWeaponType = WEAPON_MACHINE_GUN; console.log("Purchased Machine Gun."); } }
+                                else { currentWeaponType = WEAPON_MACHINE_GUN; console.log("Equipped Machine Gun."); }
+                            }
+                            // Equip Standard Gun
+                            else if (standardGunEquipButton.isHovered && standardGunEquipButton.isActive) { currentWeaponType = WEAPON_STANDARD; console.log("Equipped Standard Gun."); }
+                        }
+                    }
+                    break;
+                case STATE_GAME_OVER: break;
+                case STATE_CONFIRM_RESET: if (confirmYesButton.isHovered) { console.log("Confirmed YES to reset."); console.log("Removing localStorage items..."); try { localStorage.removeItem('shootyGameTotalCoins'); localStorage.removeItem('shootyGameStrengthLevel'); localStorage.removeItem('shootyGameSpeedLevel'); localStorage.removeItem('shootyGameAutoFirePurchased'); localStorage.removeItem('shootyGameBouncyGunPurchased'); localStorage.removeItem('shootyGameShotgunPurchased'); localStorage.removeItem('shootyGameMachineGunPurchased'); console.log("localStorage items removed."); } catch (e) { console.error("Error removing items from localStorage:", e); } console.log("Resetting global variables..."); total_coins = 0; strength_level = 0; speed_level = 0; auto_fire_purchased = false; auto_fire_active = false; bouncyGunPurchased = false; shotgunPurchased = false; machineGunPurchased = false; currentWeaponType = WEAPON_STANDARD; is_admin = false; admin_panel_open = false; cheat_input_buffer = ""; player_lives = PLAYER_MAX_LIVES; current_run_score = 0; console.log("Global variables reset."); console.log("Recalculating derived stats..."); current_player_speed = calculate_player_speed(); current_bullet_damage = calculate_bullet_damage(); console.log("Derived stats recalculated."); console.log("Data reset complete. Reloading..."); location.reload(); } else if (confirmNoButton.isHovered) { console.log("Cancelled reset."); current_state = STATE_MENU; } break;
              }
          }
 
         // --- p5.js Setup Function ---
         function setup() {
-            createCanvas(600, 400);
-            // Get reference to the HTML coin sound element
-            htmlCoinSound = document.getElementById('coin-sound');
-
-            // Position buttons
-            playButton.x = width/2 - playButton.w/2;
-            playButton.y = height/2 - playButton.h/2 - 40; // Moved up slightly
-            shopButtonMenu.x = width/2 - shopButtonMenu.w/2;
-            shopButtonMenu.y = playButton.y + playButton.h + 15; // Increased spacing
-            resetButton.x = width/2 - resetButton.w/2;
-            resetButton.y = shopButtonMenu.y + shopButtonMenu.h + 15; // Increased spacing
-
-            // Initial game state setup
-            current_state = STATE_MENU;
-            player_lives = PLAYER_MAX_LIVES;
-            is_admin = false; admin_panel_open = false; cheat_input_buffer = "";
-            textAlign(CENTER, CENTER); // Default alignment
-            console.log("p5.js Game Setup Complete.");
-            console.log("Initial Stats - StrLvl:", strength_level, "SpdLvl:", speed_level, "Coins:", total_coins, "AutoFire:", auto_fire_purchased, "Lives:", player_lives);
+            createCanvas(600, 400); htmlCoinSound = document.getElementById('coin-sound'); playButton.x = width/2 - playButton.w/2; playButton.y = height/2 - playButton.h/2 - 40; resetButton.x = width/2 - resetButton.w/2; resetButton.y = playButton.y + playButton.h + 15; current_state = STATE_MENU; player_lives = PLAYER_MAX_LIVES; is_admin = false; admin_panel_open = false; cheat_input_buffer = ""; textAlign(CENTER, CENTER);
+            shopVisibleHeight = height - shopVisibleStartY - 50;
+            console.log("p5.js Game Setup Complete."); console.log("Initial Stats - StrLvl:", strength_level, "SpdLvl:", speed_level, "Coins:", total_coins, "AutoFire:", auto_fire_purchased, "BouncyGun:", bouncyGunPurchased, "Shotgun:", shotgunPurchased, "MG:", machineGunPurchased, "Lives:", player_lives);
          }
 
         // --- p5.js Draw Function ---
         function draw() {
             let current_time_ms = millis();
 
-             // Update Button Hover States
-             if (current_state === STATE_MENU) { playButton.isHovered = !admin_panel_open && (mouseX > playButton.x && mouseX < playButton.x + playButton.w && mouseY > playButton.y && mouseY < playButton.y + playButton.h); shopButtonMenu.isHovered = !admin_panel_open && (mouseX > shopButtonMenu.x && mouseX < shopButtonMenu.x + shopButtonMenu.w && mouseY > shopButtonMenu.y && mouseY < shopButtonMenu.y + shopButtonMenu.h); resetButton.isHovered = !admin_panel_open && (mouseX > resetButton.x && mouseX < resetButton.x + resetButton.w && mouseY > resetButton.y && mouseY < resetButton.y + resetButton.h); } else { playButton.isHovered = false; shopButtonMenu.isHovered = false; resetButton.isHovered = false; }
-             if (current_state === STATE_SHOP) { let strCost = get_strength_cost(); strBuyButton.isActive = total_coins >= strCost; strBuyButton.isHovered = strBuyButton.isActive && !admin_panel_open && (mouseX > strBuyButton.x && mouseX < strBuyButton.x + strBuyButton.w && mouseY > strBuyButton.y && mouseY < strBuyButton.y + strBuyButton.h); let spdCost = get_speed_cost(); spdBuyButton.isActive = total_coins >= spdCost; spdBuyButton.isHovered = spdBuyButton.isActive && !admin_panel_open && (mouseX > spdBuyButton.x && mouseX < spdBuyButton.x + spdBuyButton.w && mouseY > spdBuyButton.y && mouseY < spdBuyButton.y + spdBuyButton.h); autoBuyButton.isActive = !auto_fire_purchased && total_coins >= AUTO_FIRE_COST; autoBuyButton.isHovered = autoBuyButton.isActive && !admin_panel_open && (mouseX > autoBuyButton.x && mouseX < autoBuyButton.x + autoBuyButton.w && mouseY > autoBuyButton.y && mouseY < autoBuyButton.y + autoBuyButton.h); } else { strBuyButton.isHovered = false; strBuyButton.isActive = false; spdBuyButton.isHovered = false; spdBuyButton.isActive = false; autoBuyButton.isHovered = false; autoBuyButton.isActive = false; }
-             if (current_state === STATE_CONFIRM_RESET) { confirmYesButton.isHovered = (mouseX > confirmYesButton.x && mouseX < confirmYesButton.x + confirmYesButton.w && mouseY > confirmYesButton.y && mouseY < confirmYesButton.y + confirmYesButton.h); confirmNoButton.isHovered = (mouseX > confirmNoButton.x && mouseX < confirmNoButton.x + confirmNoButton.w && mouseY > confirmNoButton.y && mouseY < confirmNoButton.y + confirmNoButton.h); } else { confirmYesButton.isHovered = false; confirmNoButton.isHovered = false; }
+            // --- Update Button Hover States ---
+            let effectiveMouseY = mouseY - shopVisibleStartY + shopScrollY;
+            let mouseInShopArea = current_state === STATE_SHOP && mouseX > 0 && mouseX < width && mouseY > shopVisibleStartY && mouseY < shopVisibleStartY + shopVisibleHeight;
 
-            // --- Music Start/Stop Logic ---
+            if (current_state === STATE_MENU) { playButton.isHovered = !admin_panel_open && (mouseX > playButton.x && mouseX < playButton.x + playButton.w && mouseY > playButton.y && mouseY < playButton.y + playButton.h); resetButton.isHovered = !admin_panel_open && (mouseX > resetButton.x && mouseX < resetButton.x + resetButton.w && mouseY > resetButton.y && mouseY < resetButton.y + resetButton.h); } else { playButton.isHovered = false; resetButton.isHovered = false; }
+            if (current_state === STATE_SHOP) {
+                // Determine button active states before checking hover
+                strBuyButton.isActive = total_coins >= get_strength_cost();
+                spdBuyButton.isActive = total_coins >= get_speed_cost();
+                buyLifeButton.isActive = total_coins >= BUY_LIFE_COST; // Removed max lives check here
+                autoBuyButton.isActive = !auto_fire_purchased && total_coins >= AUTO_FIRE_COST;
+                bouncyGunBuyButton.isActive = (!bouncyGunPurchased && total_coins >= BOUNCY_GUN_COST) || (bouncyGunPurchased && currentWeaponType !== WEAPON_BOUNCY);
+                shotgunBuyButton.isActive = (!shotgunPurchased && total_coins >= SHOTGUN_COST) || (shotgunPurchased && currentWeaponType !== WEAPON_SHOTGUN);
+                machineGunBuyButton.isActive = (!machineGunPurchased && total_coins >= MACHINE_GUN_COST) || (machineGunPurchased && currentWeaponType !== WEAPON_MACHINE_GUN);
+                standardGunEquipButton.isActive = currentWeaponType !== WEAPON_STANDARD;
+
+                // Check hover (only if button is potentially clickable)
+                strBuyButton.isHovered = mouseInShopArea && strBuyButton.isActive && !admin_panel_open && (mouseX > strBuyButton.x && mouseX < strBuyButton.x + strBuyButton.w && effectiveMouseY > strBuyButton.y && effectiveMouseY < strBuyButton.y + strBuyButton.h);
+                spdBuyButton.isHovered = mouseInShopArea && spdBuyButton.isActive && !admin_panel_open && (mouseX > spdBuyButton.x && mouseX < spdBuyButton.x + spdBuyButton.w && effectiveMouseY > spdBuyButton.y && effectiveMouseY < spdBuyButton.y + spdBuyButton.h);
+                buyLifeButton.isHovered = mouseInShopArea && buyLifeButton.isActive && !admin_panel_open && (mouseX > buyLifeButton.x && mouseX < buyLifeButton.x + buyLifeButton.w && effectiveMouseY > buyLifeButton.y && effectiveMouseY < buyLifeButton.y + buyLifeButton.h); // Hover only if active
+                autoBuyButton.isHovered = mouseInShopArea && autoBuyButton.isActive && !admin_panel_open && (mouseX > autoBuyButton.x && mouseX < autoBuyButton.x + autoBuyButton.w && effectiveMouseY > autoBuyButton.y && effectiveMouseY < autoBuyButton.y + autoBuyButton.h);
+                bouncyGunBuyButton.isHovered = mouseInShopArea && bouncyGunBuyButton.isActive && !admin_panel_open && (mouseX > bouncyGunBuyButton.x && mouseX < bouncyGunBuyButton.x + bouncyGunBuyButton.w && effectiveMouseY > bouncyGunBuyButton.y && effectiveMouseY < bouncyGunBuyButton.y + bouncyGunBuyButton.h);
+                shotgunBuyButton.isHovered = mouseInShopArea && shotgunBuyButton.isActive && !admin_panel_open && (mouseX > shotgunBuyButton.x && mouseX < shotgunBuyButton.x + shotgunBuyButton.w && effectiveMouseY > shotgunBuyButton.y && effectiveMouseY < shotgunBuyButton.y + shotgunBuyButton.h);
+                machineGunBuyButton.isHovered = mouseInShopArea && machineGunBuyButton.isActive && !admin_panel_open && (mouseX > machineGunBuyButton.x && mouseX < machineGunBuyButton.x + machineGunBuyButton.w && effectiveMouseY > machineGunBuyButton.y && effectiveMouseY < machineGunBuyButton.y + machineGunBuyButton.h);
+                standardGunEquipButton.isHovered = mouseInShopArea && standardGunEquipButton.isActive && !admin_panel_open && (mouseX > standardGunEquipButton.x && mouseX < standardGunEquipButton.x + standardGunEquipButton.w && effectiveMouseY > standardGunEquipButton.y && effectiveMouseY < standardGunEquipButton.y + standardGunEquipButton.h);
+
+                 // Removed placeholderUpgradeButton
+            } else { strBuyButton.isHovered = false; strBuyButton.isActive = false; spdBuyButton.isHovered = false; spdBuyButton.isActive = false; buyLifeButton.isHovered = false; buyLifeButton.isActive = false; autoBuyButton.isHovered = false; autoBuyButton.isActive = false; bouncyGunBuyButton.isHovered = false; bouncyGunBuyButton.isActive = false; shotgunBuyButton.isHovered = false; shotgunBuyButton.isActive = false; machineGunBuyButton.isHovered = false; machineGunBuyButton.isActive = false; standardGunEquipButton.isHovered = false; standardGunEquipButton.isActive = false; /*placeholderUpgradeButton.isHovered = false;*/}
+            if (current_state === STATE_CONFIRM_RESET) { confirmYesButton.isHovered = (mouseX > confirmYesButton.x && mouseX < confirmYesButton.x + confirmYesButton.w && mouseY > confirmYesButton.y && mouseY < confirmYesButton.y + confirmYesButton.h); confirmNoButton.isHovered = (mouseX > confirmNoButton.x && mouseX < confirmNoButton.x + confirmNoButton.w && mouseY > confirmNoButton.y && mouseY < confirmNoButton.y + confirmNoButton.h); } else { confirmYesButton.isHovered = false; confirmNoButton.isHovered = false; }
+
             if (isAudioSetup && menuSequence) { if (current_state === STATE_MENU && Tone.Transport.state !== 'started') { Tone.Transport.start(); menuSequence.start(0); console.log("Menu music started."); } else if (current_state !== STATE_MENU && Tone.Transport.state === 'started') { menuSequence.stop(); Tone.Transport.stop(); console.log("Menu music stopped."); } }
+            if (current_state === STATE_CONFIRM_RESET) { background(MENU_BG_COLOR[0], MENU_BG_COLOR[1], MENU_BG_COLOR[2], 150); fill(MENU_TITLE_COLOR[0], MENU_TITLE_COLOR[1], MENU_TITLE_COLOR[2], 100); textSize(52); textAlign(CENTER, CENTER); text("Shooty Game", width / 2, height * 0.25); fill(BUTTON_PLAY_COLOR[0], BUTTON_PLAY_COLOR[1], BUTTON_PLAY_COLOR[2], 100); noStroke(); rect(playButton.x, playButton.y, playButton.w, playButton.h, 8); fill(BUTTON_RESET_COLOR[0], BUTTON_RESET_COLOR[1], BUTTON_RESET_COLOR[2], 100); rect(resetButton.x, resetButton.y, resetButton.w, resetButton.h, 8); }
+            if (playerIsHit) { playerHitTimer--; if (playerHitTimer <= 0) { playerIsHit = false; } }
 
-            // Draw based on State
-            if (current_state === STATE_CONFIRM_RESET) {
-                 // Draw menu semi-transparently behind confirm box
-                 background(MENU_BG_COLOR[0], MENU_BG_COLOR[1], MENU_BG_COLOR[2], 150); // Added alpha
-                 // Draw static menu elements (optional, could be removed for focus)
-                 fill(MENU_TITLE_COLOR); textSize(48); textAlign(CENTER, CENTER); text("Shooty Game", width / 2, height * 0.28);
-                 fill(MENU_COIN_TEXT_COLOR); textSize(18); text("Total Coins: " + total_coins, width / 2, height * 0.28 + 60);
-                 // Draw buttons dimmed/inactive
-                 fill(BUTTON_PLAY_COLOR[0], BUTTON_PLAY_COLOR[1], BUTTON_PLAY_COLOR[2], 100); noStroke(); rect(playButton.x, playButton.y, playButton.w, playButton.h, 8);
-                 fill(BUTTON_SHOP_COLOR[0], BUTTON_SHOP_COLOR[1], BUTTON_SHOP_COLOR[2], 100); rect(shopButtonMenu.x, shopButtonMenu.y, shopButtonMenu.w, shopButtonMenu.h, 8);
-                 fill(BUTTON_RESET_COLOR[0], BUTTON_RESET_COLOR[1], BUTTON_RESET_COLOR[2], 100); rect(resetButton.x, resetButton.y, resetButton.w, resetButton.h, 8);
+            // --- Update Aim History (only during gameplay) ---
+            if (current_state === STATE_PLAYING && player && !admin_panel_open) {
+                 let currentAim = { timestamp: millis(), playerX: player.x, playerY: player.y, aimX: mouseX, aimY: mouseY };
+                 aimHistory.push(currentAim);
+                 aimHistory = aimHistory.filter(p => millis() - p.timestamp < MACHINE_GUN_LAG_MS + 1000);
             }
 
-            // Main State Drawing Logic
             switch (current_state) {
                 case STATE_MENU:
-                     background(MENU_BG_COLOR); // Dark blue-grey background
-
-                     // Title
-                     fill(MENU_TITLE_COLOR);
-                     textSize(52); // Larger title
-                     textAlign(CENTER, CENTER);
-                     text("Shooty Game", width / 2, height * 0.25); // Adjusted position
-
-                     // Coin Display
-                     fill(MENU_COIN_TEXT_COLOR);
-                     textSize(20); // Slightly larger coin text
-                     text("💰 Total Coins: " + total_coins, width / 2, height * 0.25 + 65); // Money bag emoji here is fine
-
-                     // --- Draw Buttons ---
-                     let buttonCornerRadius = 8; // Rounded corners for buttons
-
-                     // Play Button (Green)
-                     fill(playButton.isHovered ? BUTTON_PLAY_HOVER : BUTTON_PLAY_COLOR);
-                     noStroke();
-                     rect(playButton.x, playButton.y, playButton.w, playButton.h, buttonCornerRadius);
-                     fill(BUTTON_TEXT_COLOR);
-                     textSize(24);
-                     textAlign(CENTER, CENTER);
-                     text("Play", playButton.x + playButton.w / 2, playButton.y + playButton.h / 2);
-
-                     // Shop Button (Gold) + Particles
-                     fill(shopButtonMenu.isHovered ? BUTTON_SHOP_HOVER : BUTTON_SHOP_COLOR);
-                     noStroke();
-                     rect(shopButtonMenu.x, shopButtonMenu.y, shopButtonMenu.w, shopButtonMenu.h, buttonCornerRadius);
-                     fill(BUTTON_TEXT_COLOR);
-                     textSize(24);
-                     textAlign(CENTER, CENTER);
-                     text("Shop", shopButtonMenu.x + shopButtonMenu.w / 2, shopButtonMenu.y + shopButtonMenu.h / 2);
-
-                     // --- MODIFIED: Spawn/Update/Draw Particles Constantly ---
-                     if (!admin_panel_open && frameCount % PARTICLE_SPAWN_INTERVAL === 0) {
-                         let spawnX = random(shopButtonMenu.x - 5, shopButtonMenu.x + shopButtonMenu.w + 5);
-                         let spawnY = random(shopButtonMenu.y - 5, shopButtonMenu.y + shopButtonMenu.h + 5);
-                         shopParticles.push(new Particle(spawnX, spawnY));
-                     }
-                     for (let i = shopParticles.length - 1; i >= 0; i--) {
-                         shopParticles[i].update();
-                         shopParticles[i].display();
-                         if (shopParticles[i].isDead()) {
-                             shopParticles.splice(i, 1);
-                         }
-                     }
-                     // --- END Particle Logic ---
-
-
-                     // Reset Button (Red with Skull)
-                     fill(resetButton.isHovered ? BUTTON_RESET_HOVER : BUTTON_RESET_COLOR);
-                     noStroke();
-                     rect(resetButton.x, resetButton.y, resetButton.w, resetButton.h, buttonCornerRadius);
-                     fill(BUTTON_TEXT_COLOR);
-                     textSize(18);
-                     textAlign(CENTER, CENTER);
-                     let resetText = "Reset Data ";
-                     let skullEmoji = "💀";
-                     let totalResetWidth = textWidth(resetText) + textWidth(skullEmoji);
-                     let resetTextX = resetButton.x + (resetButton.w / 2) - (totalResetWidth / 2) + (textWidth(resetText) / 2);
-                     let skullX = resetTextX + textWidth(resetText) / 2 + textWidth(skullEmoji) / 2 + 2;
-                     text(resetText, resetTextX, resetButton.y + resetButton.h / 2);
-                     text(skullEmoji, skullX, resetButton.y + resetButton.h / 2);
-
-
-                     // Admin Indicator
-                     if (is_admin) {
-                         fill(MENU_ADMIN_TEXT_COLOR);
-                         textSize(14);
-                         textAlign(CENTER, BOTTOM);
-                         text("ADMIN MODE ACTIVE (P to open panel)", width / 2, height - 10);
-                     }
+                     background(MENU_BG_COLOR); fill(MENU_TITLE_COLOR); textSize(52); textAlign(CENTER, CENTER); text("Shooty Game", width / 2, height * 0.25); let buttonCornerRadius = 8; fill(playButton.isHovered ? BUTTON_PLAY_HOVER : BUTTON_PLAY_COLOR); noStroke(); rect(playButton.x, playButton.y, playButton.w, playButton.h, buttonCornerRadius); fill(BUTTON_TEXT_COLOR); textSize(24); textAlign(CENTER, CENTER); text("Play", playButton.x + playButton.w / 2, playButton.y + playButton.h / 2); fill(resetButton.isHovered ? BUTTON_RESET_HOVER : BUTTON_RESET_COLOR); noStroke(); rect(resetButton.x, resetButton.y, resetButton.w, resetButton.h, buttonCornerRadius); fill(BUTTON_TEXT_COLOR); textSize(18); textAlign(CENTER, CENTER); let resetText = "Reset Data "; let skullEmoji = "💀"; let totalResetWidth = textWidth(resetText) + textWidth(skullEmoji); let resetTextX = resetButton.x + (resetButton.w / 2) - (totalResetWidth / 2) + (textWidth(resetText) / 2); let skullX = resetTextX + textWidth(resetText) / 2 + textWidth(skullEmoji) / 2 + 2; text(resetText, resetTextX, resetButton.y + resetButton.h / 2); text(skullEmoji, skullX, resetButton.y + resetButton.h / 2); if (is_admin) { fill(MENU_ADMIN_TEXT_COLOR); textSize(14); textAlign(CENTER, BOTTOM); text("ADMIN MODE ACTIVE (P to open panel)", width / 2, height - 10); }
                      break;
+
                 case STATE_SHOP:
-                     background(SHOP_BG_COLOR);
-                     fill(SHOP_TEXT_COLOR);
-                     textSize(SHOP_TITLE_TEXT_SIZE);
-                     textAlign(CENTER, TOP);
-                     if (wave_completed_flag) { text(`Wave ${current_wave} Complete!`, width / 2, 20); }
-                     else { text("SHOP", width / 2, 20); }
+                     background(SHOP_BG_COLOR); fill(SHOP_TEXT_COLOR); textSize(SHOP_TITLE_TEXT_SIZE); textAlign(CENTER, TOP); if (wave_completed_flag) { text(`Wave ${current_wave} Complete!`, width / 2, 20); } else { text("SHOP", width / 2, 20); }
+                     textSize(18); text("Total Coins: " + total_coins, width / 2, 20 + SHOP_TITLE_TEXT_SIZE + 5);
+                     // Removed bottom instruction text
 
-                     textSize(18);
-                     // Display the potentially updated total_coins
-                     text("Total Coins: " + total_coins, width / 2, 20 + SHOP_TITLE_TEXT_SIZE + 5);
+                     // --- Draw Shop Items with Categories and Scrolling ---
+                     let cardX = SHOP_CARD_MARGIN;
+                     let cardWidth = width - 2 * SHOP_CARD_MARGIN;
+                     let currentContentY = 0;
+                     let headerX = cardX + SHOP_CARD_PADDING;
+                     let textX = cardX + SHOP_CARD_PADDING;
+                     let buttonX = cardX + cardWidth - SHOP_CARD_PADDING - SHOP_BUTTON_WIDTH;
 
-                     let instructionY = height - 30;
-                     textSize(14);
-                     textAlign(CENTER, BOTTOM);
-                     fill(SHOP_TEXT_COLOR);
-                     // Removed "Return to Menu" text
-                     if (wave_completed_flag) { text("Click Button to Buy/Upgrade. Press [N] for Next Wave.", width / 2, instructionY); }
-                     else { text("Click Button to Buy/Upgrade.", width / 2, instructionY); }
+                     // --- Modified drawShopItemCard Helper ---
+                     function drawShopItemCard(relativeY, title, costText, costValue, buttonObj, buttonLabel, itemType = null, weaponTypeConst = null) {
+                         let cardHeight = SHOP_BUTTON_HEIGHT + 2 * SHOP_CARD_PADDING;
+                         let isWeapon = itemType === 'weapon';
+                         let isAbility = itemType === 'ability';
+                         let isLife = itemType === 'life';
+                         let isPurchased = false;
+                         let isEquipped = false;
+                        //  let atMax = false; // Removed 'atMax' check for lives
 
-                     textAlign(LEFT, TOP);
-                     let cardX = SHOP_CARD_MARGIN; let cardWidth = width - 2 * SHOP_CARD_MARGIN; let shopY = 20 + SHOP_TITLE_TEXT_SIZE + 5 + 18 + 20; let cardPadding = SHOP_CARD_PADDING; let buttonX = cardX + cardWidth - cardPadding - SHOP_BUTTON_WIDTH; let textX = cardX + cardPadding;
-                     // Function to draw shop items (unchanged internally)
-                     function drawShopItemCard(itemY, title, costText, costValue, buttonObj, buttonLabel) { let cardHeight = SHOP_BUTTON_HEIGHT + 2 * cardPadding; fill(SHOP_CARD_COLOR); stroke(SHOP_CARD_STROKE); strokeWeight(1); rect(cardX, itemY, cardWidth, cardHeight, 5); noStroke(); fill(SHOP_TEXT_COLOR); textSize(SHOP_ITEM_TEXT_SIZE); text(title, textX, itemY + cardPadding + 3); textSize(SHOP_COST_TEXT_SIZE); text(costText, textX + 10, itemY + cardPadding + SHOP_ITEM_TEXT_SIZE + 5); buttonObj.x = buttonX; buttonObj.y = itemY + cardHeight / 2 - SHOP_BUTTON_HEIGHT / 2; let buttonColor; let currentButtonText = buttonLabel; let canAfford = total_coins >= costValue; if (buttonLabel === "Buy" && auto_fire_purchased) { buttonObj.isActive = false; buttonColor = SHOP_BUTTON_COLOR_INACTIVE; currentButtonText = "Purchased"; } else if (buttonLabel === "Buy" && !auto_fire_purchased) { buttonObj.isActive = canAfford; buttonColor = buttonObj.isActive ? (buttonObj.isHovered ? SHOP_BUTTON_COLOR_HOVER : SHOP_BUTTON_COLOR_ACTIVE) : SHOP_BUTTON_COLOR_INACTIVE; } else { buttonObj.isActive = canAfford; buttonColor = buttonObj.isActive ? (buttonObj.isHovered ? SHOP_BUTTON_COLOR_HOVER : SHOP_BUTTON_COLOR_ACTIVE) : SHOP_BUTTON_COLOR_INACTIVE; } fill(buttonColor); stroke(0, 0, 0, 100); strokeWeight(1); rect(buttonObj.x, buttonObj.y, buttonObj.w, buttonObj.h, 3); noStroke(); fill(SHOP_BUTTON_TEXT_COLOR); textAlign(CENTER, CENTER); textSize(14); text(currentButtonText, buttonObj.x + buttonObj.w / 2, buttonObj.y + buttonObj.h / 2); if (!canAfford && !(buttonLabel === "Buy" && auto_fire_purchased)) { fill(GRAY_TEXT_COLOR); textAlign(LEFT, TOP); text("(Not Enough)", textX + 10 + textWidth(costText) + 5, itemY + cardPadding + SHOP_ITEM_TEXT_SIZE + 5); } textAlign(LEFT, TOP); return itemY + cardHeight + SHOP_CARD_MARGIN; }
-                     let strCost = get_strength_cost(); let strDamage = calculate_bullet_damage(); shopY = drawShopItemCard(shopY, `Strength Lvl: ${strength_level} (Dmg: ${strDamage})`, `Cost: ${strCost}`, strCost, strBuyButton, "Upgrade");
-                     let spdCost = get_speed_cost(); let spdValue = calculate_player_speed(); let spdPercent = speed_level * 20; shopY = drawShopItemCard(shopY, `Speed Lvl: ${speed_level} (+${spdPercent}%, Val: ${spdValue.toFixed(2)})`, `Cost: ${spdCost}`, spdCost, spdBuyButton, "Upgrade");
-                     let autoCostText = auto_fire_purchased ? "(Press Q to toggle)" : `Cost: ${AUTO_FIRE_COST}`; shopY = drawShopItemCard(shopY, "Auto-Fire Gun", autoCostText, AUTO_FIRE_COST, autoBuyButton, "Buy");
-                     break;
-                case STATE_GAME_OVER: // Draw logic unchanged
-                      background(100); fill(255, 0, 0); textSize(32); textAlign(CENTER, CENTER); text("GAME OVER", width / 2, height / 2 - 40); fill(255); textSize(16); text(`Reached Wave: ${current_wave}`, width / 2, height / 2 - 5); text("Total Coins: " + total_coins, width / 2, height / 2 + 20); text("Score This Run: " + current_run_score, width / 2, height / 2 + 45); text(`Lives Remaining: ${max(0, player_lives)}`, width / 2, height / 2 + 70); text("Press [SPACE] to Restart (Wave 1)", width / 2, height / 2 + 105); text("Press [U] for Shop", width / 2, height / 2 + 130);
-                      break;
+                         // Determine purchase/equip/max status
+                         if (isWeapon) {
+                             if (weaponTypeConst === WEAPON_BOUNCY) isPurchased = bouncyGunPurchased;
+                             else if (weaponTypeConst === WEAPON_SHOTGUN) isPurchased = shotgunPurchased;
+                             else if (weaponTypeConst === WEAPON_MACHINE_GUN) isPurchased = machineGunPurchased;
+                             else if (weaponTypeConst === WEAPON_STANDARD) isPurchased = true;
+                             isEquipped = currentWeaponType === weaponTypeConst;
+                         } else if (isAbility && buttonObj === autoBuyButton) {
+                             isPurchased = auto_fire_purchased;
+                         } else if (isLife) {
+                             isPurchased = false; // Lives aren't "purchased" in the same way
+                         }
+
+                         if (relativeY + cardHeight > shopScrollY && relativeY < shopScrollY + shopVisibleHeight) {
+                            fill(SHOP_CARD_COLOR); stroke(SHOP_CARD_STROKE); strokeWeight(1); rect(cardX, relativeY, cardWidth, cardHeight, 5);
+                            noStroke(); fill(SHOP_TEXT_COLOR);
+                            textAlign(LEFT, TOP); textSize(SHOP_ITEM_TEXT_SIZE); text(title, textX, relativeY + SHOP_CARD_PADDING + 3);
+                            textSize(SHOP_COST_TEXT_SIZE);
+                            // Display cost only if applicable
+                            if (buttonLabel !== "Placeholder" && !isWeapon && !isAbility && !isLife) { text(costText, textX, relativeY + SHOP_CARD_PADDING + SHOP_ITEM_TEXT_SIZE + 5); }
+                            else if ((isWeapon || isAbility || isLife) && !isPurchased) { text(costText, textX, relativeY + SHOP_CARD_PADDING + SHOP_ITEM_TEXT_SIZE + 5); } // Removed atMax check
+                            else if (isAbility && isPurchased) { text(costText, textX, relativeY + SHOP_CARD_PADDING + SHOP_ITEM_TEXT_SIZE + 5); }
+
+                            buttonObj.x = buttonX; buttonObj.y = relativeY + cardHeight / 2 - SHOP_BUTTON_HEIGHT / 2; // Use relative Y
+
+                            let buttonColor; let currentButtonText = buttonLabel; let canAfford = total_coins >= costValue;
+
+                            // Determine Button State
+                            if (buttonLabel === "Placeholder") { buttonObj.isActive = false; buttonColor = SHOP_BUTTON_COLOR_INACTIVE; currentButtonText = "???"; }
+                            else if (isWeapon) {
+                                if (!isPurchased) { buttonObj.isActive = canAfford; buttonColor = buttonObj.isActive ? (buttonObj.isHovered ? SHOP_BUTTON_COLOR_HOVER : SHOP_BUTTON_COLOR_ACTIVE) : SHOP_BUTTON_COLOR_INACTIVE; currentButtonText = "Buy"; }
+                                else if (isEquipped) { buttonObj.isActive = false; buttonColor = SHOP_BUTTON_COLOR_INACTIVE; currentButtonText = "Equipped"; }
+                                else { buttonObj.isActive = true; buttonColor = buttonObj.isHovered ? SHOP_BUTTON_COLOR_HOVER : SHOP_BUTTON_COLOR_ACTIVE; currentButtonText = "Equip"; }
+                            } else if (isAbility && buttonObj === autoBuyButton) {
+                                if (!isPurchased) { buttonObj.isActive = canAfford; buttonColor = buttonObj.isActive ? (buttonObj.isHovered ? SHOP_BUTTON_COLOR_HOVER : SHOP_BUTTON_COLOR_ACTIVE) : SHOP_BUTTON_COLOR_INACTIVE; currentButtonText = "Buy"; }
+                                else { buttonObj.isActive = false; buttonColor = SHOP_BUTTON_COLOR_INACTIVE; currentButtonText = "Purchased"; }
+                            } else if (isLife) { // Buy Life Button
+                                buttonObj.isActive = canAfford; // Only check affordability
+                                buttonColor = buttonObj.isActive ? (buttonObj.isHovered ? SHOP_BUTTON_COLOR_HOVER : SHOP_BUTTON_COLOR_ACTIVE) : SHOP_BUTTON_COLOR_INACTIVE;
+                                currentButtonText = "Buy";
+                            } else { // Standard Upgrade
+                                buttonObj.isActive = canAfford; buttonColor = buttonObj.isActive ? (buttonObj.isHovered ? SHOP_BUTTON_COLOR_HOVER : SHOP_BUTTON_COLOR_ACTIVE) : SHOP_BUTTON_COLOR_INACTIVE; currentButtonText = "Upgrade";
+                            }
+
+                            // Draw Button
+                            fill(buttonColor); stroke(0, 0, 0, 100); strokeWeight(1); rect(buttonObj.x, buttonObj.y, buttonObj.w, buttonObj.h, 3);
+                            noStroke(); fill(SHOP_BUTTON_TEXT_COLOR); textAlign(CENTER, CENTER); textSize(14); text(currentButtonText, buttonObj.x + buttonObj.w / 2, buttonObj.y + buttonObj.h / 2);
+
+                            // Draw "Not Enough" text
+                            if (!canAfford && buttonObj.isActive === false && buttonLabel !== "Placeholder" && buttonLabel !== "Equip" && buttonLabel !== "Equipped" && currentButtonText !== "Max Lives") { // Added check for Max Lives text
+                                fill(GRAY_TEXT_COLOR); textAlign(LEFT, TOP); text("(Not Enough)", textX, relativeY + SHOP_CARD_PADDING + SHOP_ITEM_TEXT_SIZE + SHOP_COST_TEXT_SIZE + 7);
+                            }
+                         }
+                         return relativeY + cardHeight + SHOP_CARD_MARGIN;
+                     }
+
+
+                     // --- Apply Scrolling Transformation ---
+                     push();
+                     translate(0, shopVisibleStartY - shopScrollY);
+
+                     // --- Upgrades Category ---
+                     fill(SHOP_TEXT_COLOR); textSize(SHOP_CATEGORY_HEADER_SIZE); textAlign(LEFT, TOP);
+                     if (currentContentY + SHOP_CATEGORY_HEADER_SIZE > shopScrollY && currentContentY < shopScrollY + shopVisibleHeight) { text("--- Upgrades ---", headerX, currentContentY); }
+                     currentContentY += SHOP_CATEGORY_HEADER_SIZE + SHOP_HEADER_MARGIN_BOTTOM;
+                     let strCost = get_strength_cost(); let strDamage = calculate_bullet_damage(); currentContentY = drawShopItemCard(currentContentY, `Strength Lvl: ${strength_level} (Dmg: ${strDamage})`, `Cost: ${strCost}`, strCost, strBuyButton, "Upgrade");
+                     let spdCost = get_speed_cost(); let spdValue = calculate_player_speed(); currentContentY = drawShopItemCard(currentContentY, `Speed Lvl: ${speed_level} (Val: ${spdValue.toFixed(2)})`, `Cost: ${spdCost}`, spdCost, spdBuyButton, "Upgrade");
+                     // Buy Life Item
+                     currentContentY = drawShopItemCard(currentContentY, `Buy 1 Life (Current: ${player_lives})`, `Cost: ${BUY_LIFE_COST}`, BUY_LIFE_COST, buyLifeButton, "Buy", 'life');
+
+                     // --- Weapons Category ---
+                     currentContentY += SHOP_CATEGORY_MARGIN_TOP - SHOP_CARD_MARGIN; fill(SHOP_TEXT_COLOR); textSize(SHOP_CATEGORY_HEADER_SIZE); textAlign(LEFT, TOP);
+                     if (currentContentY + SHOP_CATEGORY_HEADER_SIZE > shopScrollY && currentContentY < shopScrollY + shopVisibleHeight) { text("--- Weapons ---", headerX, currentContentY); }
+                     currentContentY += SHOP_CATEGORY_HEADER_SIZE + SHOP_HEADER_MARGIN_BOTTOM;
+
+                     currentContentY = drawShopItemCard(currentContentY, "Standard Gun", "", 0, standardGunEquipButton, "Equip", 'weapon', WEAPON_STANDARD);
+                     let bouncyCostText = bouncyGunPurchased ? "" : `Cost: ${BOUNCY_GUN_COST}`; currentContentY = drawShopItemCard(currentContentY, "Bouncy Gun", bouncyCostText, BOUNCY_GUN_COST, bouncyGunBuyButton, "Buy", 'weapon', WEAPON_BOUNCY);
+                     let shotgunCostText = shotgunPurchased ? "" : `Cost: ${SHOTGUN_COST}`; currentContentY = drawShopItemCard(currentContentY, "Shotgun", shotgunCostText, SHOTGUN_COST, shotgunBuyButton, "Buy", 'weapon', WEAPON_SHOTGUN);
+                     let machineGunCostText = machineGunPurchased ? "" : `Cost: ${MACHINE_GUN_COST}`; currentContentY = drawShopItemCard(currentContentY, "Machine Gun", machineGunCostText, MACHINE_GUN_COST, machineGunBuyButton, "Buy", 'weapon', WEAPON_MACHINE_GUN);
+                     let autoCostText = auto_fire_purchased ? "(Press Q to toggle)" : `Cost: ${AUTO_FIRE_COST}`; currentContentY = drawShopItemCard(currentContentY, "Auto-Fire Ability", autoCostText, AUTO_FIRE_COST, autoBuyButton, "Buy", 'ability');
+                     // Removed second weapon placeholder
+
+                     pop(); // --- End Scrolling Transformation ---
+
+                     shopContentHeight = currentContentY; shopScrollableHeight = max(0, shopContentHeight - shopVisibleHeight); shopScrollY = constrain(shopScrollY, 0, shopScrollableHeight);
+                     break; // End STATE_SHOP
+
+                case STATE_GAME_OVER:
+                      background(GAME_OVER_BG_COLOR); fill(GAME_OVER_TITLE_COLOR); textSize(64); textAlign(CENTER, CENTER); drawingContext.shadowOffsetX = 3; drawingContext.shadowOffsetY = 3; drawingContext.shadowBlur = 4; drawingContext.shadowColor = 'rgba(0, 0, 0, 0.5)'; text("GAME OVER", width / 2, height * 0.3); drawingContext.shadowOffsetX = 0; drawingContext.shadowOffsetY = 0; drawingContext.shadowBlur = 0;
+                      fill(GAME_OVER_TEXT_COLOR); textSize(20); let statY = height * 0.5; text(`Reached Wave: ${current_wave}`, width / 2, statY);
+                      textSize(18); let instructionStartY = statY + 45; text("Press [SPACE] to Restart (Wave 1)", width / 2, instructionStartY); instructionStartY += 30; text(`Press [${RETURN_TO_MENU_KEY.toUpperCase()}] for Main Menu`, width / 2, instructionStartY);
+                      break; // End STATE_GAME_OVER
+
                 case STATE_PLAYING:
-                    background(BACKGROUND_COLOR);
-                    if (player) { player.update(); check_player_powerup_collision(player, powerups); }
-                    if (time_stop_active && current_time_ms >= time_stop_end_time_ms) { time_stop_active = false; console.log("Time Stop ended."); }
-                    if (auto_fire_active && player) { auto_aim_target = find_closest_enemy(player.x, player.y, enemies); } else { auto_aim_target = null; }
+                    background(BACKGROUND_COLOR); if (player) { player.update(); check_player_powerup_collision(player, powerups); } if (time_stop_active && current_time_ms >= time_stop_end_time_ms) { time_stop_active = false; console.log("Time Stop ended."); } if (auto_fire_active && player && currentWeaponType !== WEAPON_MACHINE_GUN) { auto_aim_target = find_closest_enemy(player.x, player.y, enemies); } else { auto_aim_target = null; } // Auto-aim only for non-MG auto-fire
+                    if (!time_stop_active && !admin_panel_open) { let elapsed_wave_time_sec = (current_time_ms - wave_timer_start_ms) / 1000.0; if (elapsed_wave_time_sec >= WAVE_DURATION_SEC) { console.log(`Wave ${current_wave} ended successfully.`); console.log(`Adding score ${current_run_score} to total coins ${total_coins}`); total_coins += current_run_score; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); current_run_score = 0; console.log(`New total coins: ${total_coins}`); wave_completed_flag = true; bullets = []; powerups = []; homing_shot_ready = false; explosionParticles = []; shopScrollY = 0; current_state = STATE_SHOP; return; } else { if (current_time_ms - last_timestop_chance_check_time_ms >= TIME_STOP_CHECK_INTERVAL_MS) { if (!time_stop_ready && !time_stop_active) { if (random() < TIME_STOP_CHANCE) { time_stop_ready = true; console.log("Time Stop Ready!"); } } last_timestop_chance_check_time_ms += TIME_STOP_CHECK_INTERVAL_MS; } for (let i = bullets.length - 1; i >= 0; i--) { if (bullets[i]) { bullets[i].update(); if (bullets[i].is_offscreen() || bullets[i].isDead) { bullets.splice(i, 1); } } else { bullets.splice(i, 1); } } for (let i = enemies.length - 1; i >= 0; i--) { if (enemies[i]) { enemies[i].update(player?.x, player?.y); } else { enemies.splice(i, 1); } } spawn_timer++; if (spawn_timer >= current_enemy_spawn_rate) { spawn_enemy(); spawn_timer = 0; } if (current_time_ms - last_blue_spawn_time_ms >= current_blue_spawn_interval_sec * 1000) { spawn_blue_enemy(); last_blue_spawn_time_ms = current_time_ms; } if (current_time_ms - last_powerup_spawn_time_ms >= POWERUP_SPAWN_INTERVAL_SEC * 1000) { spawn_powerup(); last_powerup_spawn_time_ms = current_time_ms; }
 
-                    if (!time_stop_active && !admin_panel_open) {
-                        let elapsed_wave_time_sec = (current_time_ms - wave_timer_start_ms) / 1000.0;
-                        // Wave End Logic (includes coin update fix)
-                        if (elapsed_wave_time_sec >= WAVE_DURATION_SEC) {
-                            console.log(`Wave ${current_wave} ended successfully.`);
-                            console.log(`Adding score ${current_run_score} to total coins ${total_coins}`);
-                            total_coins += current_run_score;
-                            localStorage.setItem('shootyGameTotalCoins', total_coins.toString());
-                            current_run_score = 0; // Reset score for the next run/wave
-                            console.log(`New total coins: ${total_coins}`);
-                            wave_completed_flag = true;
-                            bullets = []; powerups = []; homing_shot_ready = false;
-                            current_state = STATE_SHOP;
-                            shopParticles = []; // Clear particles when entering shop
-                            return; // Exit draw loop immediately
+                        // --- Firing Logic ---
+                        let ctm = millis();
+                        let cooldown = SHOOT_COOLDOWN_MS; // Default
+                        if (currentWeaponType === WEAPON_SHOTGUN) cooldown = SHOTGUN_COOLDOWN_MS;
+                        else if (currentWeaponType === WEAPON_MACHINE_GUN) cooldown = MACHINE_GUN_COOLDOWN_MS;
+
+                        // Machine Gun Auto-Fire (always active if equipped, uses lagged mouse aim)
+                        if (currentWeaponType === WEAPON_MACHINE_GUN && player) {
+                            if (ctm - last_shot_time_ms >= cooldown) {
+                                let laggedAim = getLaggedAim(MACHINE_GUN_LAG_MS);
+                                let aimDX = mouseX - player.x; // Default to current mouse if no lag
+                                let aimDY = mouseY - player.y;
+                                if (laggedAim) { aimDX = laggedAim.dx; aimDY = laggedAim.dy; }
+
+                                let dist = sqrt(aimDX * aimDX + aimDY * aimDY);
+                                if (dist > 0) {
+                                    let vx = (aimDX / dist) * BULLET_SPEED; let vy = (aimDY / dist) * BULLET_SPEED;
+                                    bullets.push(new Bullet(player.x, player.y, vx, vy, BULLET_RADIUS, BRONZE_COLOR));
+                                    last_shot_time_ms = ctm;
+                                }
+                            }
                         }
-                        else { // Wave continues
-                            if (current_time_ms - last_timestop_chance_check_time_ms >= TIME_STOP_CHECK_INTERVAL_MS) { if (!time_stop_ready && !time_stop_active) { if (random() < TIME_STOP_CHANCE) { time_stop_ready = true; console.log("Time Stop Ready!"); } } last_timestop_chance_check_time_ms += TIME_STOP_CHECK_INTERVAL_MS; }
-                            for (let i = bullets.length - 1; i >= 0; i--) { if (bullets[i]) { bullets[i].update(); if (bullets[i].is_offscreen()) { bullets.splice(i, 1); } } else { bullets.splice(i, 1); } }
-                            for (let i = enemies.length - 1; i >= 0; i--) { if (enemies[i]) { if (player) { enemies[i].update(player.x, player.y); } } else { enemies.splice(i, 1); } }
-                            spawn_timer++; if (spawn_timer >= current_enemy_spawn_rate) { spawn_enemy(); spawn_timer = 0; }
-                            if (current_time_ms - last_blue_spawn_time_ms >= current_blue_spawn_interval_sec * 1000) { spawn_blue_enemy(); last_blue_spawn_time_ms = current_time_ms; }
-                            if (current_time_ms - last_powerup_spawn_time_ms >= POWERUP_SPAWN_INTERVAL_SEC * 1000) { spawn_powerup(); last_powerup_spawn_time_ms = current_time_ms; }
-                            if (auto_fire_active && player && auto_aim_target) { let dx = auto_aim_target.x - player.x; let dy = auto_aim_target.y - player.y; let dist = sqrt(dx * dx + dy * dy); if (dist > 0 && current_time_ms - last_shot_time_ms >= SHOOT_COOLDOWN_MS) { let vx = (dx / dist) * BULLET_SPEED; let vy = (dy / dist) * BULLET_SPEED; let new_bullet; if (homing_shot_ready) { new_bullet = new HomingBullet(player.x, player.y, vx, vy, BULLET_RADIUS, BRONZE_COLOR, auto_aim_target); homing_shot_ready = false; console.log("Auto-Fired Homing Bullet!"); } else { new_bullet = new Bullet(player.x, player.y, vx, vy, BULLET_RADIUS, BRONZE_COLOR); } bullets.push(new_bullet); last_shot_time_ms = current_time_ms; } }
+                        // Other Weapons Auto-Fire (uses toggle, aims at target)
+                        else if (auto_fire_active && player && auto_aim_target) {
+                            if (ctm - last_shot_time_ms >= cooldown) {
+                                let aimDX = auto_aim_target.x - player.x; let aimDY = auto_aim_target.y - player.y;
+                                let dist = sqrt(aimDX * aimDX + aimDY * aimDY);
+                                if (dist > 0) {
+                                    let baseAngle = atan2(aimDY, aimDX);
+                                    let baseVX = (aimDX / dist) * BULLET_SPEED;
+                                    let baseVY = (aimDY / dist) * BULLET_SPEED;
+                                    // Fire based on weapon type
+                                    if (homing_shot_ready) { // Check Homing FIRST
+                                        bullets.push(new HomingBullet(player.x, player.y, baseVX, baseVY, BULLET_RADIUS, BRONZE_COLOR, auto_aim_target));
+                                        homing_shot_ready = false; console.log("Auto-Fired Homing Bullet!");
+                                    } else if (currentWeaponType === WEAPON_SHOTGUN) {
+                                        for (let i = 0; i < SHOTGUN_BULLET_COUNT; i++) {
+                                            let angleOffset = (SHOTGUN_SPREAD_ANGLE / (SHOTGUN_BULLET_COUNT > 1 ? SHOTGUN_BULLET_COUNT - 1 : 1)) * (i - (SHOTGUN_BULLET_COUNT - 1) / 2);
+                                            let fireAngle = baseAngle + angleOffset;
+                                            let vx = cos(fireAngle) * BULLET_SPEED; let vy = sin(fireAngle) * BULLET_SPEED;
+                                            bullets.push(new Bullet(player.x, player.y, vx, vy, BULLET_RADIUS, BRONZE_COLOR));
+                                        }
+                                    } else if (currentWeaponType === WEAPON_BOUNCY) {
+                                        bullets.push(new BouncyBullet(player.x, player.y, baseVX, baseVY));
+                                    } else { // Standard weapon
+                                        bullets.push(new Bullet(player.x, player.y, baseVX, baseVY, BULLET_RADIUS, BRONZE_COLOR));
+                                    }
+                                    last_shot_time_ms = ctm; // Reset cooldown
+                                }
+                            }
+                        }
+                    } }
+                    for (let i = explosionParticles.length - 1; i >= 0; i--) { explosionParticles[i].update(); explosionParticles[i].display(); if (explosionParticles[i].isDead()) { explosionParticles.splice(i, 1); } }
+                    for (let i = bullets.length - 1; i >= 0; i--) { if (!bullets[i]) continue; let bullet = bullets[i]; let bullet_removed = false; for (let j = enemies.length - 1; j >= 0; j--) { if (!enemies[j]) continue; let enemy = enemies[j]; let distSq = (bullet.x - enemy.x)**2 + (bullet.y - enemy.y)**2; let radiiSq = (bullet.radius + enemy.radius)**2; if (distSq <= radiiSq) { let damageToDeal = 0; let isBouncy = bullet instanceof BouncyBullet; if (isBouncy) { damageToDeal = bullet.damage; } else { damageToDeal = current_bullet_damage; } if (enemy.take_damage(damageToDeal)) { current_run_score += enemy.reward; if (htmlCoinSound) { htmlCoinSound.currentTime = 0; htmlCoinSound.play(); } for (let k = 0; k < EXPLOSION_PARTICLE_COUNT; k++) { explosionParticles.push(new ExplosionParticle(enemy.x, enemy.y, enemy.color)); } if (enemy === auto_aim_target) { auto_aim_target = null; } enemies.splice(j, 1); } if (isBouncy) { bullet.handleEnemyBounce(); } else { if (!bullet_removed) { bullets.splice(i, 1); bullet_removed = true; break; } } } } }
+                    if (player && !playerIsHit) { for (let j = enemies.length - 1; j >= 0; j--) { if (!enemies[j]) continue; let enemy = enemies[j]; let distSq = (enemy.x - player.x)**2 + (enemy.y - player.y)**2; let radiiSq = (enemy.radius + player.radius)**2; if (distSq <= radiiSq) { if (enemy.hp > 0) { let damageAmount = enemy.hp; player_lives -= damageAmount; console.log(`Player hit by enemy with ${enemy.hp} HP! Lives: ${player_lives}`); playerIsHit = true; playerHitTimer = PLAYER_HIT_DURATION; enemies.splice(j, 1); if (player_lives <= 0) { console.log("GAME OVER!"); keys_pressed.clear(); auto_aim_target = null; total_coins += current_run_score; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); explosionParticles = []; current_state = STATE_GAME_OVER; break; } } else { enemies.splice(j, 1); } } } }
+
+                    // --- Draw Laser Sight (Handles all weapons) ---
+                    if (player && !admin_panel_open) {
+                        let aim_dx = mouseX - player.x; // Default to mouse aim
+                        let aim_dy = mouseY - player.y;
+                        if (auto_fire_active && auto_aim_target && currentWeaponType !== WEAPON_MACHINE_GUN) { // Use target if auto-aiming (non-MG)
+                            aim_dx = auto_aim_target.x - player.x;
+                            aim_dy = auto_aim_target.y - player.y;
+                        }
+
+                        // Use lagged aim for Machine Gun sight
+                        if (currentWeaponType === WEAPON_MACHINE_GUN) {
+                            let laggedAim = getLaggedAim(MACHINE_GUN_LAG_MS);
+                            if (laggedAim) {
+                                aim_dx = laggedAim.dx;
+                                aim_dy = laggedAim.dy;
+                            }
+                        }
+
+                        let aim_dist = sqrt(aim_dx * aim_dx + aim_dy * aim_dy);
+                        if (aim_dist > 0) {
+                            stroke(LASER_SIGHT_COLOR); strokeWeight(LASER_SIGHT_WEIGHT);
+                            let baseAngle = atan2(aim_dy, aim_dx);
+                            let line_length = max(width, height) * 1.5;
+
+                            if (currentWeaponType === WEAPON_SHOTGUN) {
+                                // Draw cone edges using the shotgun spread angle
+                                let angle1 = baseAngle - SHOTGUN_SPREAD_ANGLE / 2;
+                                let angle2 = baseAngle + SHOTGUN_SPREAD_ANGLE / 2;
+                                line(player.x, player.y, player.x + cos(angle1) * line_length, player.y + sin(angle1) * line_length);
+                                line(player.x, player.y, player.x + cos(angle2) * line_length, player.y + sin(angle2) * line_length);
+                            } else {
+                                // Draw single line (Standard, Bouncy, Lagged MG)
+                                let end_x = player.x + (aim_dx / aim_dist) * line_length;
+                                let end_y = player.y + (aim_dy / aim_dist) * line_length;
+                                line(player.x, player.y, end_x, end_y);
+                            }
+                            noStroke();
                         }
                     }
-                    // Collision Check with HTML Audio
-                    for (let i = bullets.length - 1; i >= 0; i--) { if (!bullets[i]) continue; let bullet = bullets[i]; let bullet_removed = false; for (let j = enemies.length - 1; j >= 0; j--) { if (!enemies[j]) continue; let enemy = enemies[j]; let distSq = (bullet.x - enemy.x)**2 + (bullet.y - enemy.y)**2; let radiiSq = (bullet.radius + enemy.radius)**2; if (distSq <= radiiSq) { if (enemy.take_damage(current_bullet_damage)) { current_run_score += enemy.reward; if (htmlCoinSound) { htmlCoinSound.currentTime = 0; htmlCoinSound.play(); } if (enemy === auto_aim_target) { auto_aim_target = null; } enemies.splice(j, 1); } if (!bullet_removed) { bullets.splice(i, 1); bullet_removed = true; break; } } } }
-                    // Player-Enemy Collision Check
-                    if (player) { for (let j = enemies.length - 1; j >= 0; j--) { if (!enemies[j]) continue; let enemy = enemies[j]; let distSq = (enemy.x - player.x)**2 + (enemy.y - player.y)**2; let radiiSq = (enemy.radius + player.radius)**2; if (distSq <= radiiSq) { if (enemy.hp > 0) { let damageAmount = enemy.hp; player_lives -= damageAmount; console.log(`Player hit! Lives: ${player_lives}`); enemies.splice(j, 1); if (player_lives <= 0) { console.log("GAME OVER!"); keys_pressed.clear(); auto_aim_target = null; total_coins += current_run_score; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); current_state = STATE_GAME_OVER; shopParticles = []; break; } } else { enemies.splice(j, 1); } } } }
-                    // Laser Sight
-                    let aim_dx = 0, aim_dy = 0, aim_dist = 0; if (player && !admin_panel_open) { if (auto_fire_active && auto_aim_target) { aim_dx = auto_aim_target.x - player.x; aim_dy = auto_aim_target.y - player.y; } else if (!auto_fire_active) { aim_dx = mouseX - player.x; aim_dy = mouseY - player.y; } aim_dist = sqrt(aim_dx * aim_dx + aim_dy * aim_dy); if (aim_dist > 0) { let norm_x = aim_dx / aim_dist; let norm_y = aim_dy / aim_dist; let line_length = max(width, height) * 1.5; let end_x = player.x + norm_x * line_length; let end_y = player.y + norm_y * line_length; stroke(LASER_SIGHT_COLOR); strokeWeight(LASER_SIGHT_WEIGHT); line(player.x, player.y, end_x, end_y); noStroke(); } }
-                    // Display elements
-                    if (player) player.display(); for (let bullet of bullets) { if (bullet) bullet.display(); } for (let powerup of powerups) { if (powerup) powerup.display(); } noStroke(); for (let enemy of enemies) { if (enemy) enemy.display(); }
 
-                    // --- MODIFIED HUD ---
-                    fill(SCORE_TEXT_COLOR);
-                    textSize(SCORE_TEXT_SIZE);
-                    textAlign(LEFT, TOP);
-                    let hudY = 10;
-                    let time_remaining = max(0, WAVE_DURATION_SEC - ((millis() - wave_timer_start_ms) / 1000.0));
-                    text(`Wave: ${current_wave} | Time: ${time_remaining.toFixed(1)}`, 10, hudY);
-                    hudY += SCORE_TEXT_SIZE + 2;
-                    fill(LIVES_TEXT_COLOR);
-                    text(`Lives: ${max(0, player_lives)}`, 10, hudY);
+                    // Draw Game Objects
+                    if (player) { if (!playerIsHit || frameCount % 4 < 2) { player.display(); } } for (let bullet of bullets) { if (bullet) bullet.display(); } for (let powerup of powerups) { if (powerup) powerup.display(); } noStroke(); for (let enemy of enemies) { if (enemy) enemy.display(); }
 
-                    // Draw Live Coin Count (Total + Current Run) in Top Right with Icon
-                    let coinDisplayY = 10;
-                    let liveCoinValue = total_coins + current_run_score; // Calculate live value
-                    let coinIconX = width - 15 - COIN_ICON_RADIUS; // Position for icon
-                    let coinIconY = coinDisplayY + COIN_ICON_RADIUS / 2 + 2; // Vertical position for icon center
-                    let coinTextX = coinIconX - COIN_ICON_RADIUS - 5; // Position text left of icon
+                    // --- Draw HUD (Removed Weapon Indicator) ---
+                    fill(SCORE_TEXT_COLOR); textSize(SCORE_TEXT_SIZE); textAlign(LEFT, TOP); let hudY = 10; let time_remaining = max(0, WAVE_DURATION_SEC - ((millis() - wave_timer_start_ms) / 1000.0)); text(`Wave: ${current_wave} | Time: ${time_remaining.toFixed(1)}`, 10, hudY); hudY += SCORE_TEXT_SIZE + 2; fill(LIVES_TEXT_COLOR); text(`Lives: ${max(0, player_lives)}`, 10, hudY);
+                    // Removed Weapon Indicator Text
+                    let coinDisplayY = 10; let liveCoinValue = total_coins + current_run_score; let coinIconX = width - 15 - COIN_ICON_RADIUS; let coinIconY = coinDisplayY + COIN_ICON_RADIUS / 2 + 2; let coinTextX = coinIconX - COIN_ICON_RADIUS - 5; push(); ellipseMode(CENTER); strokeWeight(1); stroke(COIN_OUTLINE_COLOR); fill(COIN_COLOR); ellipse(coinIconX, coinIconY, COIN_ICON_RADIUS * 2); noStroke(); textAlign(RIGHT, TOP); fill(MENU_COIN_TEXT_COLOR); textSize(SCORE_TEXT_SIZE); text(liveCoinValue, coinTextX, coinDisplayY); pop(); textAlign(CENTER, BOTTOM); textSize(INDICATOR_TEXT_SIZE); let indicatorY = height - 10; let indicatorRightX = width - 10;
+                    // Update Homing indicator check
+                    if (homing_shot_ready) { fill(INDICATOR_TEXT_COLOR); text("Homing Ready!", width / 2, indicatorY); }
+                    if (time_stop_active) { let remaining_stop_time = (time_stop_end_time_ms - current_time_ms) / 1000; fill(0, 200, 255); textAlign(LEFT, BOTTOM); text(`Stop Active: ${max(0, remaining_stop_time).toFixed(1)}s`, 10, indicatorY); } else if (time_stop_ready) { fill(INDICATOR_TEXT_COLOR); textAlign(LEFT, BOTTOM); text("Stop Ready! (E)", 10, indicatorY); } if (auto_fire_purchased) { textAlign(RIGHT, BOTTOM); if (auto_fire_active) { fill(0, 255, 0); text("Auto ON (Q)", indicatorRightX, indicatorY); } else { fill(255, 165, 0); text("Auto OFF (Q)", indicatorRightX, indicatorY); } }
+                    break; // End STATE_PLAYING
 
-                    push(); // Isolate drawing styles
-                    // Draw the coin icon
-                    ellipseMode(CENTER);
-                    strokeWeight(1);
-                    stroke(COIN_OUTLINE_COLOR);
-                    fill(COIN_COLOR);
-                    ellipse(coinIconX, coinIconY, COIN_ICON_RADIUS * 2);
+                case STATE_CONFIRM_RESET:
+                    let boxW = 300; let boxH = 150; let boxX = width / 2 - boxW / 2; let boxY = height / 2 - boxH / 2; fill(CONFIRM_BOX_COLOR); stroke(200); strokeWeight(1); rect(boxX, boxY, boxW, boxH, 10); noStroke(); fill(CONFIRM_TEXT_COLOR); textAlign(CENTER, CENTER); textSize(16); text("Reset all saved data?\nThis cannot be undone.", width / 2, boxY + boxH * 0.35); let buttonY = boxY + boxH * 0.75 - CONFIRM_BUTTON_HEIGHT / 2; confirmYesButton.x = boxX + boxW * 0.25 - CONFIRM_BUTTON_WIDTH / 2; confirmYesButton.y = buttonY; confirmNoButton.x = boxX + boxW * 0.75 - CONFIRM_BUTTON_WIDTH / 2; confirmNoButton.y = buttonY; fill(confirmYesButton.isHovered ? CONFIRM_YES_HOVER : CONFIRM_YES_COLOR); rect(confirmYesButton.x, confirmYesButton.y, confirmYesButton.w, confirmYesButton.h, 5); fill(BUTTON_TEXT_COLOR); textSize(16); text("Yes", confirmYesButton.x + confirmYesButton.w / 2, confirmYesButton.y + confirmYesButton.h / 2); fill(confirmNoButton.isHovered ? CONFIRM_NO_HOVER : CONFIRM_NO_COLOR); rect(confirmNoButton.x, confirmNoButton.y, confirmNoButton.w, confirmNoButton.h, 5); fill(BUTTON_TEXT_COLOR); textSize(16); text("No", confirmNoButton.x + confirmNoButton.w / 2, confirmNoButton.y + confirmNoButton.h / 2);
+                    break; // End STATE_CONFIRM_RESET
 
-                    // Draw the coin text (live value)
-                    noStroke(); // Text doesn't need stroke
-                    textAlign(RIGHT, TOP); // Align text to the right, relative to coinTextX
-                    fill(MENU_COIN_TEXT_COLOR); // Use gold color
-                    textSize(SCORE_TEXT_SIZE);
-                    text(liveCoinValue, coinTextX, coinDisplayY);
-                    pop(); // Restore previous drawing styles
-
-                    // Indicators at the bottom (unchanged)
-                    textAlign(CENTER, BOTTOM); textSize(INDICATOR_TEXT_SIZE); let indicatorY = height - 10; let indicatorRightX = width - 10; if (homing_shot_ready) { fill(INDICATOR_TEXT_COLOR); text("Homing Ready!", width / 2, indicatorY); } if (time_stop_active) { let remaining_stop_time = (time_stop_end_time_ms - current_time_ms) / 1000; fill(0, 200, 255); textAlign(LEFT, BOTTOM); text(`Stop Active: ${max(0, remaining_stop_time).toFixed(1)}s`, 10, indicatorY); } else if (time_stop_ready) { fill(INDICATOR_TEXT_COLOR); textAlign(LEFT, BOTTOM); text("Stop Ready! (E)", 10, indicatorY); } if (auto_fire_purchased) { textAlign(RIGHT, BOTTOM); if (auto_fire_active) { fill(0, 255, 0); text("Auto ON (Q)", indicatorRightX, indicatorY); } else { fill(255, 165, 0); text("Auto OFF (Q)", indicatorRightX, indicatorY); } }
-                    // --- END MODIFIED HUD ---
-                    break;
-                case STATE_CONFIRM_RESET: // Draw logic unchanged
-                    // Background is already drawn semi-transparently
-                    let boxW = 300; let boxH = 150; let boxX = width / 2 - boxW / 2; let boxY = height / 2 - boxH / 2;
-                    fill(CONFIRM_BOX_COLOR); stroke(200); strokeWeight(1); rect(boxX, boxY, boxW, boxH, 10); // Confirmation box
-                    noStroke(); fill(CONFIRM_TEXT_COLOR); textAlign(CENTER, CENTER); textSize(16);
-                    text("Reset all saved data?\nThis cannot be undone.", width / 2, boxY + boxH * 0.35); // Confirmation text
-                    // Buttons
-                    let buttonY = boxY + boxH * 0.75 - CONFIRM_BUTTON_HEIGHT / 2;
-                    confirmYesButton.x = boxX + boxW * 0.25 - CONFIRM_BUTTON_WIDTH / 2; confirmYesButton.y = buttonY;
-                    confirmNoButton.x = boxX + boxW * 0.75 - CONFIRM_BUTTON_WIDTH / 2; confirmNoButton.y = buttonY;
-                    fill(confirmYesButton.isHovered ? CONFIRM_YES_HOVER : CONFIRM_YES_COLOR); rect(confirmYesButton.x, confirmYesButton.y, confirmYesButton.w, confirmYesButton.h, 5);
-                    fill(BUTTON_TEXT_COLOR); textSize(16); text("Yes", confirmYesButton.x + confirmYesButton.w / 2, confirmYesButton.y + confirmYesButton.h / 2);
-                    fill(confirmNoButton.isHovered ? CONFIRM_NO_HOVER : CONFIRM_NO_COLOR); rect(confirmNoButton.x, confirmNoButton.y, confirmNoButton.w, confirmNoButton.h, 5);
-                    fill(BUTTON_TEXT_COLOR); textSize(16); text("No", confirmNoButton.x + confirmNoButton.w / 2, confirmNoButton.y + confirmNoButton.h / 2);
-                    break;
             } // End switch(current_state)
 
-            // Admin Panel Draw (Unchanged)
-            if (is_admin && admin_panel_open) { fill(ADMIN_PANEL_BG_COLOR); rect(0, 0, width, height); fill(ADMIN_PANEL_TEXT_COLOR); textAlign(CENTER, TOP); textSize(24); text("--- ADMIN PANEL ---", width / 2, 30); textAlign(LEFT, TOP); textSize(16); let panelY = 80; text("Stats:", 50, panelY); panelY += 25; text(`[1/S+1] Str: ${strength_level} (Dmg: ${calculate_bullet_damage()})`, 60, panelY); panelY += 25; text(`[2/S+2] Spd: ${speed_level} (Val: ${calculate_player_speed().toFixed(2)})`, 60, panelY); panelY += 25; text(`[3] Toggle Auto-Fire Purchase (${auto_fire_purchased})`, 60, panelY); panelY += 25; text(`[4] +1k Coins (${total_coins})`, 60, panelY); panelY += 25; text(`[5/S+5] Lives: ${player_lives}`, 60, panelY); panelY += 40; textAlign(CENTER, BOTTOM); textSize(14); text("Modify Keys: # / Shift+#. [P] Close.", width / 2, height - 30); }
+            // --- Draw Admin Panel Overlay (Improved UI) ---
+            if (is_admin && admin_panel_open) {
+                fill(ADMIN_PANEL_BG_COLOR); rect(0, 0, width, height); fill(ADMIN_PANEL_TEXT_COLOR); textAlign(CENTER, TOP); textSize(24); text("--- ADMIN PANEL ---", width / 2, 30);
+                textAlign(LEFT, TOP); textSize(16); let panelY = ADMIN_PANEL_Y_START; let labelX = ADMIN_PANEL_X_MARGIN; let valueX = labelX + ADMIN_PANEL_VALUE_X_OFFSET;
+                function drawAdminItem(y, keyDesc, currentValue) { text(keyDesc, labelX, y); text(currentValue, valueX, y); return y + ADMIN_PANEL_LINE_HEIGHT; }
+                panelY = drawAdminItem(panelY, "[1/S+1] Strength:", `${strength_level} (Dmg: ${calculate_bullet_damage()})`);
+                panelY = drawAdminItem(panelY, "[2/S+2] Speed:", `${speed_level} (Val: ${calculate_player_speed().toFixed(2)})`);
+                panelY = drawAdminItem(panelY, "[3] Toggle Auto-Fire:", `${auto_fire_purchased}`);
+                panelY = drawAdminItem(panelY, "[4] Add 1k Coins:", `${total_coins}`);
+                panelY = drawAdminItem(panelY, "[5/S+5] Lives:", `${player_lives}`);
+                panelY = drawAdminItem(panelY, "[6] Toggle Bouncy Gun:", `${bouncyGunPurchased}`);
+                panelY = drawAdminItem(panelY, "[7] Toggle Shotgun:", `${shotgunPurchased}`);
+                panelY = drawAdminItem(panelY, "[8] Toggle Machine Gun:", `${machineGunPurchased}`);
+                textAlign(CENTER, BOTTOM); textSize(14); text("Modify Keys: # / Shift+#. [P] Close.", width / 2, height - 30);
+            } // End Admin Panel Draw
 
         } // End draw()
+
+        // --- Mouse Wheel Event Handler (for Shop Scrolling) ---
+        function mouseWheel(event) {
+            if (current_state === STATE_SHOP) {
+                shopScrollY += event.deltaY * 0.5;
+                shopScrollY = constrain(shopScrollY, 0, shopScrollableHeight);
+                return false; // Prevent default browser scroll
+            }
+        }
 
     </script>
 </body>
