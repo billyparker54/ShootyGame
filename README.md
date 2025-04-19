@@ -1,7 +1,7 @@
 this is my game
 i made it in 2 days
 i hope yall like it
-put this file on raw if u wanna read it
+to read this like a pro look in the code or look at it raw not the preview silly
 mess around in the console its simple code
 lets see if people can figure out the secret admin code
 btw console is opened by f12 on pc and on mac its fn+volume up
