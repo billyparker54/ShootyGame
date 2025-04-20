@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>p5.js Game - Shooty Game (Homing Applies to More Weapons)</title>
+    <title>p5.js Game - Shooty Game (Load to Shop)</title>
     <style>
         body { padding: 0; margin: 0; display: flex; justify-content: center; align-items: center; flex-direction: column; background-color: #2c3e50; /* Darker background */ font-family: 'Arial', sans-serif; /* Cleaner font */}
         canvas { margin-top: 20px; border: 2px solid #34495e; /* Border matching background */}
@@ -21,12 +21,12 @@
         // --- Constants ---
         // Gameplay Constants
         const BASE_PLAYER_SPEED = 3.5;
-        const BASE_BULLET_DAMAGE = 1; // Base damage for standard/shotgun/MG bullets
+        const BASE_BULLET_DAMAGE = 1; // Base damage for standard/shotgun/MG bullets (Strength upgrade removed)
         const BULLET_SPEED = 5;
         const SHOOT_COOLDOWN_MS = 300; // Default cooldown
         const PLAYER_RADIUS = 15;
         const BULLET_RADIUS = 4;
-        const PLAYER_MAX_LIVES = 3; // NOTE: This constant is no longer used to limit buying lives
+        const PLAYER_MAX_LIVES = 3; // Initial lives for Easy mode
         const PLAYER_HIT_DURATION = 30;
 
         // Enemy Constants
@@ -89,16 +89,20 @@
         const MACHINE_GUN_COOLDOWN_MS = SHOOT_COOLDOWN_MS / 2;
         const MACHINE_GUN_LAG_MS = 1500;
 
-        // Shop/Upgrade Costs
-        const BASE_STRENGTH_COST = 20; // Affects standard/shotgun/MG damage
-        const COST_INCREASE_STRENGTH = 15;
+        // Shop/Upgrade Costs (Base Costs)
+        // const BASE_STRENGTH_COST = 20; // REMOVED
+        // const COST_INCREASE_STRENGTH = 15; // REMOVED
         const BASE_SPEED_COST = 15;
         const COST_INCREASE_SPEED = 10;
-        const AUTO_FIRE_COST = 75;
-        const BOUNCY_GUN_COST = 40;
-        const SHOTGUN_COST = 65;
-        const MACHINE_GUN_COST = 100;
-        const BUY_LIFE_COST = 40;
+        const BASE_AUTO_FIRE_COST = 75;
+        const BASE_BOUNCY_GUN_COST = 40;
+        const BASE_SHOTGUN_COST = 65;
+        const BASE_MACHINE_GUN_COST = 100;
+        const BASE_BUY_LIFE_COST = 40;
+
+        // Difficulty Constants
+        const DIFFICULTY_EASY = 'easy';
+        const DIFFICULTY_HARD = 'hard';
 
         // Color Palette
         const PLAYER_COLOR = [0, 150, 255];
@@ -149,6 +153,10 @@
         // Menu Button Colors
         const BUTTON_PLAY_COLOR = [46, 204, 113]; const BUTTON_PLAY_HOVER = [39, 174, 96];
         const BUTTON_RESET_COLOR = [231, 76, 60]; const BUTTON_RESET_HOVER = [192, 57, 43];
+        const BUTTON_LOAD_COLOR = [52, 152, 219]; const BUTTON_LOAD_HOVER = [41, 128, 185]; // Blue
+        const BUTTON_NEW_COLOR = [155, 89, 182]; const BUTTON_NEW_HOVER = [142, 68, 173]; // Purple
+        const BUTTON_EASY_COLOR = [46, 204, 113]; const BUTTON_EASY_HOVER = [39, 174, 96]; // Green
+        const BUTTON_HARD_COLOR = [231, 76, 60]; const BUTTON_HARD_HOVER = [192, 57, 43]; // Red
         const BUTTON_TEXT_COLOR = [255, 255, 255];
 
         // Particle Constants (For Enemy Destruction)
@@ -191,6 +199,8 @@
         const STATE_GAME_OVER = 2;
         const STATE_SHOP = 3;
         const STATE_CONFIRM_RESET = 4;
+        const STATE_LOAD_OR_NEW = 5; // NEW state
+        const STATE_DIFFICULTY_SELECT = 6; // NEW state
 
         // --- Global Variables ---
         let player = null;
@@ -208,19 +218,21 @@
         let time_stop_end_time_ms = 0;
         let last_timestop_chance_check_time_ms = 0;
         let player_lives = PLAYER_MAX_LIVES;
-        let strength_level = parseInt(localStorage.getItem('shootyGameStrengthLevel') || '0', 10);
+        // let strength_level = parseInt(localStorage.getItem('shootyGameStrengthLevel') || '0', 10); // REMOVED
         let speed_level = parseInt(localStorage.getItem('shootyGameSpeedLevel') || '0', 10);
         let total_coins = parseInt(localStorage.getItem('shootyGameTotalCoins') || '0', 10);
         let auto_fire_purchased = localStorage.getItem('shootyGameAutoFirePurchased') === 'true';
         let bouncyGunPurchased = localStorage.getItem('shootyGameBouncyGunPurchased') === 'true';
         let shotgunPurchased = localStorage.getItem('shootyGameShotgunPurchased') === 'true';
         let machineGunPurchased = localStorage.getItem('shootyGameMachineGunPurchased') === 'true';
-        let current_wave = 0;
+        let saved_wave = 1; // Loaded wave number
+        let current_wave = 0; // Current wave in the active game
         let current_run_score = 0;
         let current_player_speed;
-        let current_bullet_damage;
+        let current_bullet_damage = BASE_BULLET_DAMAGE; // Damage is now fixed
         let current_enemy_spawn_rate;
         let current_blue_spawn_interval_sec;
+        let current_difficulty = DIFFICULTY_EASY;
         let keys_pressed = new Set();
         let auto_aim_target = null;
         let auto_fire_active = auto_fire_purchased;
@@ -231,9 +243,15 @@
         let playerIsHit = false;
         let playerHitTimer = 0;
         let currentWeaponType = WEAPON_STANDARD;
+
+        // UI Element State
         let playButton = { x: 0, y: 0, w: 150, h: 50, isHovered: false };
         let resetButton = { x: 0, y: 0, w: 150, h: 40, isHovered: false };
-        let strBuyButton = { x: 0, y: 0, w: SHOP_BUTTON_WIDTH, h: SHOP_BUTTON_HEIGHT, isHovered: false, isActive: false };
+        let loadGameButton = { x: 0, y: 0, w: 250, h: 50, isHovered: false };
+        let newGameButton = { x: 0, y: 0, w: 250, h: 50, isHovered: false };
+        let easyModeButton = { x: 0, y: 0, w: 200, h: 50, isHovered: false };
+        let hardModeButton = { x: 0, y: 0, w: 200, h: 50, isHovered: false };
+        // let strBuyButton = { x: 0, y: 0, w: SHOP_BUTTON_WIDTH, h: SHOP_BUTTON_HEIGHT, isHovered: false, isActive: false }; // REMOVED
         let spdBuyButton = { x: 0, y: 0, w: SHOP_BUTTON_WIDTH, h: SHOP_BUTTON_HEIGHT, isHovered: false, isActive: false };
         let buyLifeButton = { x: 0, y: 0, w: SHOP_BUTTON_WIDTH, h: SHOP_BUTTON_HEIGHT, isHovered: false, isActive: false };
         let autoBuyButton = { x: 0, y: 0, w: SHOP_BUTTON_WIDTH, h: SHOP_BUTTON_HEIGHT, isHovered: false, isActive: false };
@@ -241,8 +259,6 @@
         let bouncyGunBuyButton = { x: 0, y: 0, w: SHOP_BUTTON_WIDTH, h: SHOP_BUTTON_HEIGHT, isHovered: false, isActive: false };
         let shotgunBuyButton = { x: 0, y: 0, w: SHOP_BUTTON_WIDTH, h: SHOP_BUTTON_HEIGHT, isHovered: false, isActive: false };
         let machineGunBuyButton = { x: 0, y: 0, w: SHOP_BUTTON_WIDTH, h: SHOP_BUTTON_HEIGHT, isHovered: false, isActive: false };
-        // Removed placeholderUpgradeButton
-        // Removed placeholderWeapon2Button
         let confirmYesButton = { x: 0, y: 0, w: CONFIRM_BUTTON_WIDTH, h: CONFIRM_BUTTON_HEIGHT, isHovered: false };
         let confirmNoButton = { x: 0, y: 0, w: CONFIRM_BUTTON_WIDTH, h: CONFIRM_BUTTON_HEIGHT, isHovered: false };
         let is_admin = false;
@@ -268,11 +284,20 @@
 
         // --- Helper Functions ---
         function calculate_player_speed() { return BASE_PLAYER_SPEED * (1.0 + speed_level * 0.20); }
-        function calculate_bullet_damage() { return BASE_BULLET_DAMAGE + strength_level; } // Standard/Shotgun/MG bullet damage
-        function get_strength_cost() { return BASE_STRENGTH_COST + strength_level * COST_INCREASE_STRENGTH; }
-        function get_speed_cost() { return BASE_SPEED_COST + speed_level * COST_INCREASE_SPEED; }
+        // function calculate_bullet_damage() { return BASE_BULLET_DAMAGE + strength_level; } // REMOVED - Damage is fixed
+        // function get_strength_cost() { return BASE_STRENGTH_COST + strength_level * COST_INCREASE_STRENGTH; } // REMOVED
+
+        // Shop Cost Calculation Helpers (incorporate difficulty)
+        function getShopMultiplier() { return (current_difficulty === DIFFICULTY_HARD) ? 2 : 1; }
+        function getShopSpeedCost() { let base = BASE_SPEED_COST + speed_level * COST_INCREASE_SPEED; return base * getShopMultiplier(); }
+        function getShopAutoFireCost() { return BASE_AUTO_FIRE_COST * getShopMultiplier(); }
+        function getShopBouncyGunCost() { return BASE_BOUNCY_GUN_COST * getShopMultiplier(); }
+        function getShopShotgunCost() { return BASE_SHOTGUN_COST * getShopMultiplier(); }
+        function getShopMachineGunCost() { return BASE_MACHINE_GUN_COST * getShopMultiplier(); }
+        function getShopBuyLifeCost() { return BASE_BUY_LIFE_COST * getShopMultiplier(); }
+
         current_player_speed = calculate_player_speed();
-        current_bullet_damage = calculate_bullet_damage();
+        // current_bullet_damage = calculate_bullet_damage(); // Damage is now fixed at BASE_BULLET_DAMAGE
         function find_closest_enemy(playerX, playerY, enemy_list) { let closest_enemy = null; let min_dist_sq = Infinity; for (let enemy of enemy_list) { if (!enemy || typeof enemy.x === 'undefined' || typeof enemy.y === 'undefined' || enemy.hp <= 0) continue; let dx = enemy.x - playerX; let dy = enemy.y - playerY; let dist_sq = dx * dx + dy * dy; if (dist_sq < min_dist_sq) { min_dist_sq = dist_sq; closest_enemy = enemy; } } return closest_enemy; }
         function find_enemy_closest_by_angle(startX, startY, direction_vx, direction_vy, enemy_list) { if (!enemy_list || enemy_list.length === 0) return null; let shot_angle = atan2(direction_vy, direction_vx); let best_target = null; let min_angle_diff = Infinity; for (let enemy of enemy_list) { if (!enemy || typeof enemy.x === 'undefined' || typeof enemy.y === 'undefined') continue; let enemy_dx = enemy.x - startX; let enemy_dy = enemy.y - startY; let enemy_angle = atan2(enemy_dy, enemy_dx); let diff = shot_angle - enemy_angle; while (diff <= -PI) diff += TWO_PI; while (diff > PI) diff -= TWO_PI; let angle_diff = abs(diff); if (angle_diff < min_angle_diff) { min_angle_diff = angle_diff; best_target = enemy; } } return best_target; }
         // Modified helper to get lagged aim direction relative to past player position
@@ -311,8 +336,38 @@
 
         // --- Game/Wave Start Function ---
         function start_new_game_or_wave(wave_number) {
-            console.log(`Starting Wave ${wave_number}...`); current_wave = wave_number; current_enemy_spawn_rate = max(20, BASE_ENEMY_SPAWN_RATE - (current_wave - 1) * 4); current_blue_spawn_interval_sec = max(4, BASE_BLUE_ENEMY_SPAWN_INTERVAL_SEC - floor((current_wave - 1) / 2)); console.log(`Wave ${current_wave} Difficulty: Spawn Rate=${current_enemy_spawn_rate}, Blue Interval=${current_blue_spawn_interval_sec}s`); current_player_speed = calculate_player_speed(); current_bullet_damage = calculate_bullet_damage(); auto_fire_active = auto_fire_purchased; let px=width/2; let py=height/2; player = new Player(px,py,PLAYER_RADIUS,current_player_speed,PLAYER_COLOR); bullets=[]; enemies=[]; powerups=[]; keys_pressed=new Set(); spawn_timer=0; auto_aim_target=null; wave_timer_start_ms=millis(); last_blue_spawn_time_ms=wave_timer_start_ms; last_powerup_spawn_time_ms=wave_timer_start_ms; homing_shot_ready=false; time_stop_ready=false; time_stop_active=false; time_stop_end_time_ms=0; last_timestop_chance_check_time_ms=wave_timer_start_ms; wave_completed_flag=false; playerIsHit = false; playerHitTimer = 0; explosionParticles = []; aimHistory = []; // Clear aim history
-             if(wave_number===1){current_run_score=0; player_lives = PLAYER_MAX_LIVES; console.log("Starting new game. Lives reset to:", player_lives);} current_state=STATE_PLAYING; console.log("Game/Wave reset complete. Current Lives:", player_lives, "Auto-Fire active:", auto_fire_active);
+            console.log(`Starting Wave ${wave_number} with difficulty ${current_difficulty}...`);
+            current_wave = wave_number;
+            current_enemy_spawn_rate = max(20, BASE_ENEMY_SPAWN_RATE - (current_wave - 1) * 4);
+            current_blue_spawn_interval_sec = max(4, BASE_BLUE_ENEMY_SPAWN_INTERVAL_SEC - floor((current_wave - 1) / 2));
+            console.log(`Wave ${current_wave} Difficulty: Spawn Rate=${current_enemy_spawn_rate}, Blue Interval=${current_blue_spawn_interval_sec}s`);
+            current_player_speed = calculate_player_speed();
+            // current_bullet_damage = calculate_bullet_damage(); // Damage is fixed
+            auto_fire_active = auto_fire_purchased;
+            let px=width/2; let py=height/2;
+            player = new Player(px,py,PLAYER_RADIUS,current_player_speed,PLAYER_COLOR);
+            bullets=[]; enemies=[]; powerups=[]; keys_pressed=new Set(); spawn_timer=0; auto_aim_target=null;
+            wave_timer_start_ms=millis(); last_blue_spawn_time_ms=wave_timer_start_ms; last_powerup_spawn_time_ms=wave_timer_start_ms;
+            homing_shot_ready=false; time_stop_ready=false; time_stop_active=false; time_stop_end_time_ms=0; last_timestop_chance_check_time_ms=wave_timer_start_ms;
+            wave_completed_flag=false; playerIsHit = false; playerHitTimer = 0; explosionParticles = []; aimHistory = [];
+
+             // Set initial lives based on difficulty ONLY if starting wave 1
+             if(wave_number === 1){
+                 current_run_score = 0; // Reset score only on a true new game
+                 if (current_difficulty === DIFFICULTY_HARD) {
+                     player_lives = 1; // Hard mode starts with 1 life
+                     console.log("Starting HARD MODE game. Lives set to 1.");
+                 } else {
+                     player_lives = PLAYER_MAX_LIVES; // Easy mode starts with default max
+                     console.log("Starting EASY MODE game. Lives reset to:", player_lives);
+                 }
+             } else {
+                 // If resuming a wave, ensure difficulty is easy (as saves don't store difficulty)
+                 current_difficulty = DIFFICULTY_EASY;
+                 console.log(`Resuming Wave ${wave_number}. Difficulty set to Easy. Current lives: ${player_lives}`);
+             }
+             current_state=STATE_PLAYING;
+             console.log("Game/Wave reset complete. Current Lives:", player_lives, "Auto-Fire active:", auto_fire_active);
          }
 
         // --- Function to Setup Tone.js Audio ---
@@ -325,26 +380,26 @@
             // --- Admin Panel Input Handling ---
             if (is_admin && admin_panel_open) {
                 let statChanged = false;
-                if (key === '1') { if (keyIsDown(SHIFT)) { if (strength_level > 0) strength_level--; statChanged = true; } else { strength_level++; statChanged = true; } }
-                else if (key === '2') { if (keyIsDown(SHIFT)) { if (speed_level > 0) speed_level--; statChanged = true; } else { speed_level++; statChanged = true; } }
+                // Key '1' removed (Strength)
+                if (key === '2') { if (keyIsDown(SHIFT)) { if (speed_level > 0) speed_level--; statChanged = true; } else { speed_level++; statChanged = true; } }
                 else if (key === '3') { auto_fire_purchased = !auto_fire_purchased; auto_fire_active = auto_fire_purchased; statChanged = true; }
                 else if (key === '4') { total_coins += 1000; statChanged = true; }
-                else if (key === '5') { if (keyIsDown(SHIFT)) { if (player_lives > 0) player_lives--; statChanged = true; } else { player_lives++; statChanged = true; } console.log("ADMIN: Lives set to", player_lives); } // No upper limit check needed here
+                else if (key === '5') { if (keyIsDown(SHIFT)) { if (player_lives > 0) player_lives--; statChanged = true; } else { player_lives++; statChanged = true; } console.log("ADMIN: Lives set to", player_lives); }
                 else if (key === '6') { bouncyGunPurchased = !bouncyGunPurchased; statChanged = true; }
                 else if (key === '7') { shotgunPurchased = !shotgunPurchased; statChanged = true; }
                 else if (key === '8') { machineGunPurchased = !machineGunPurchased; statChanged = true; }
                 else if (keyLower === ADMIN_PANEL_TOGGLE_KEY) { admin_panel_open = false; console.log("ADMIN PANEL: Closed"); return false; }
                 if (statChanged) {
                     current_player_speed = calculate_player_speed();
-                    current_bullet_damage = calculate_bullet_damage();
-                    localStorage.setItem('shootyGameStrengthLevel', strength_level.toString());
+                    // current_bullet_damage = calculate_bullet_damage(); // Damage fixed
+                    // localStorage.setItem('shootyGameStrengthLevel', strength_level.toString()); // REMOVED
                     localStorage.setItem('shootyGameSpeedLevel', speed_level.toString());
                     localStorage.setItem('shootyGameTotalCoins', total_coins.toString());
                     localStorage.setItem('shootyGameAutoFirePurchased', auto_fire_purchased ? 'true' : 'false');
                     localStorage.setItem('shootyGameBouncyGunPurchased', bouncyGunPurchased ? 'true' : 'false');
                     localStorage.setItem('shootyGameShotgunPurchased', shotgunPurchased ? 'true' : 'false');
                     localStorage.setItem('shootyGameMachineGunPurchased', machineGunPurchased ? 'true' : 'false');
-                    console.log(`ADMIN Change - Str:${strength_level}, Spd:${speed_level}, Coins:${total_coins}, AutoFire:${auto_fire_purchased}, Bouncy:${bouncyGunPurchased}, Shotgun:${shotgunPurchased}, MG:${machineGunPurchased}, Lives:${player_lives}`);
+                    console.log(`ADMIN Change - Spd:${speed_level}, Coins:${total_coins}, AutoFire:${auto_fire_purchased}, Bouncy:${bouncyGunPurchased}, Shotgun:${shotgunPurchased}, MG:${machineGunPurchased}, Lives:${player_lives}`);
                 }
                 return false;
             }
@@ -355,13 +410,15 @@
             if (keyLower === ADMIN_PANEL_TOGGLE_KEY && is_admin) { admin_panel_open = !admin_panel_open; console.log("ADMIN PANEL:", admin_panel_open ? "Opened" : "Closed"); if (admin_panel_open) auto_aim_target = null; return false; }
 
             switch (current_state) {
-                case STATE_MENU: break;
+                case STATE_MENU: break; // Input handled by mouse clicks
+                case STATE_LOAD_OR_NEW: break; // Input handled by mouse clicks
+                case STATE_DIFFICULTY_SELECT: break; // Input handled by mouse clicks
                 case STATE_SHOP:
                     if (key === NEXT_WAVE_KEY && wave_completed_flag) { start_new_game_or_wave(current_wave + 1); shopScrollY = 0; return false; }
                     if (key === NEXT_WAVE_KEY) return false;
                     break;
                 case STATE_GAME_OVER:
-                    if (key === ' ') { start_new_game_or_wave(1); return false; }
+                    if (key === ' ') { start_new_game_or_wave(1); return false; } // Restart always starts wave 1
                     else if (keyLower === RETURN_TO_MENU_KEY) { current_state = STATE_MENU; return false; }
                     if (" m".includes(keyLower) || key === ' ') return false;
                     break;
@@ -425,37 +482,81 @@
                         }
                     }
                     break;
-                case STATE_MENU: if (!admin_panel_open) { if (playButton.isHovered) { start_new_game_or_wave(1); } else if (resetButton.isHovered) { current_state = STATE_CONFIRM_RESET; } } break;
+                case STATE_MENU:
+                    if (!admin_panel_open) {
+                        if (playButton.isHovered) {
+                            // Go to Load/New screen instead of starting directly
+                            current_state = STATE_LOAD_OR_NEW;
+                            console.log("Entering Load/New screen...");
+                        } else if (resetButton.isHovered) {
+                            current_state = STATE_CONFIRM_RESET;
+                        }
+                    }
+                    break;
+                case STATE_LOAD_OR_NEW: // NEW state input handling
+                    if (!admin_panel_open) {
+                        if (loadGameButton.isHovered && saved_wave > 1) {
+                            console.log("Loading game, entering shop for wave:", saved_wave);
+                            current_difficulty = DIFFICULTY_EASY; // Loading always defaults to easy for now
+                            current_wave = saved_wave - 1; // Set wave to the one before the saved one
+                            wave_completed_flag = true; // Show shop as if wave was just completed
+                            shopScrollY = 0; // Reset shop scroll
+                            current_state = STATE_SHOP; // Go to shop
+                        } else if (newGameButton.isHovered) {
+                            console.log("Starting new game flow...");
+                            current_state = STATE_DIFFICULTY_SELECT;
+                        }
+                    }
+                    break;
+                case STATE_DIFFICULTY_SELECT: // NEW state input handling
+                     if (!admin_panel_open) {
+                         if (easyModeButton.isHovered) {
+                             console.log("Selected Easy Mode");
+                             current_difficulty = DIFFICULTY_EASY;
+                             localStorage.removeItem('shootyGameCurrentWave'); // Clear save on new game
+                             saved_wave = 1;
+                             start_new_game_or_wave(1);
+                         } else if (hardModeButton.isHovered) {
+                             console.log("Selected Hard Mode");
+                             current_difficulty = DIFFICULTY_HARD;
+                             localStorage.removeItem('shootyGameCurrentWave'); // Clear save on new game
+                             saved_wave = 1;
+                             start_new_game_or_wave(1);
+                         }
+                     }
+                     break;
                 case STATE_SHOP:
                     if (!admin_panel_open) {
                         let effectiveMouseY = mouseY - shopVisibleStartY + shopScrollY;
                         let mouseInShopArea = mouseX > 0 && mouseX < width && mouseY > shopVisibleStartY && mouseY < shopVisibleStartY + shopVisibleHeight;
                         if (mouseInShopArea) {
+                            // Use difficulty-adjusted costs
+                            // let strengthCost = getShopStrengthCost(); // REMOVED
+                            let speedCost = getShopSpeedCost();
+                            let lifeCost = getShopBuyLifeCost();
+                            let autoFireCost = getShopAutoFireCost();
+                            let bouncyCost = getShopBouncyGunCost();
+                            let shotgunCost = getShopShotgunCost();
+                            let machineGunCost = getShopMachineGunCost();
+
                             // --- Shop Click Logic (Buy/Equip) ---
-                            if (strBuyButton.isHovered && strBuyButton.isActive) { let cost = get_strength_cost(); if (total_coins >= cost) { total_coins -= cost; strength_level++; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); localStorage.setItem('shootyGameStrengthLevel', strength_level.toString()); current_bullet_damage = calculate_bullet_damage(); console.log("Purchased Strength Level:", strength_level); } }
-                            else if (spdBuyButton.isHovered && spdBuyButton.isActive) { let cost = get_speed_cost(); if (total_coins >= cost) { total_coins -= cost; speed_level++; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); localStorage.setItem('shootyGameSpeedLevel', speed_level.toString()); current_player_speed = calculate_player_speed(); console.log("Purchased Speed Level:", speed_level); } }
-                            else if (buyLifeButton.isHovered && buyLifeButton.isActive) { // Buy Life Click
-                                if (total_coins >= BUY_LIFE_COST) { // No max check needed here anymore
-                                    total_coins -= BUY_LIFE_COST;
-                                    player_lives++;
-                                    localStorage.setItem('shootyGameTotalCoins', total_coins.toString());
-                                    console.log("Purchased 1 Life. Current lives:", player_lives);
-                                }
-                            }
-                            else if (autoBuyButton.isHovered && autoBuyButton.isActive && !auto_fire_purchased) { if (total_coins >= AUTO_FIRE_COST) { total_coins -= AUTO_FIRE_COST; auto_fire_purchased = true; auto_fire_active = true; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); localStorage.setItem('shootyGameAutoFirePurchased', 'true'); console.log("Purchased Auto-Fire."); } }
+                            // Strength removed
+                            if (spdBuyButton.isHovered && spdBuyButton.isActive) { if (total_coins >= speedCost) { total_coins -= speedCost; speed_level++; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); localStorage.setItem('shootyGameSpeedLevel', speed_level.toString()); current_player_speed = calculate_player_speed(); console.log("Purchased Speed Level:", speed_level); } }
+                            else if (buyLifeButton.isHovered && buyLifeButton.isActive) { if (total_coins >= lifeCost) { total_coins -= lifeCost; player_lives++; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); console.log("Purchased 1 Life. Current lives:", player_lives); } }
+                            else if (autoBuyButton.isHovered && autoBuyButton.isActive && !auto_fire_purchased) { if (total_coins >= autoFireCost) { total_coins -= autoFireCost; auto_fire_purchased = true; auto_fire_active = true; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); localStorage.setItem('shootyGameAutoFirePurchased', 'true'); console.log("Purchased Auto-Fire."); } }
                             // Bouncy Gun Purchase/Equip
                             else if (bouncyGunBuyButton.isHovered && bouncyGunBuyButton.isActive) {
-                                if (!bouncyGunPurchased) { if (total_coins >= BOUNCY_GUN_COST) { total_coins -= BOUNCY_GUN_COST; bouncyGunPurchased = true; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); localStorage.setItem('shootyGameBouncyGunPurchased', 'true'); currentWeaponType = WEAPON_BOUNCY; console.log("Purchased Bouncy Gun."); } }
+                                if (!bouncyGunPurchased) { if (total_coins >= bouncyCost) { total_coins -= bouncyCost; bouncyGunPurchased = true; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); localStorage.setItem('shootyGameBouncyGunPurchased', 'true'); currentWeaponType = WEAPON_BOUNCY; console.log("Purchased Bouncy Gun."); } }
                                 else { currentWeaponType = WEAPON_BOUNCY; console.log("Equipped Bouncy Gun."); }
                             }
                             // Shotgun Purchase/Equip
                             else if (shotgunBuyButton.isHovered && shotgunBuyButton.isActive) {
-                                if (!shotgunPurchased) { if (total_coins >= SHOTGUN_COST) { total_coins -= SHOTGUN_COST; shotgunPurchased = true; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); localStorage.setItem('shootyGameShotgunPurchased', 'true'); currentWeaponType = WEAPON_SHOTGUN; console.log("Purchased Shotgun."); } }
+                                if (!shotgunPurchased) { if (total_coins >= shotgunCost) { total_coins -= shotgunCost; shotgunPurchased = true; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); localStorage.setItem('shootyGameShotgunPurchased', 'true'); currentWeaponType = WEAPON_SHOTGUN; console.log("Purchased Shotgun."); } }
                                 else { currentWeaponType = WEAPON_SHOTGUN; console.log("Equipped Shotgun."); }
                             }
                             // Machine Gun Purchase/Equip
                             else if (machineGunBuyButton.isHovered && machineGunBuyButton.isActive) {
-                                if (!machineGunPurchased) { if (total_coins >= MACHINE_GUN_COST) { total_coins -= MACHINE_GUN_COST; machineGunPurchased = true; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); localStorage.setItem('shootyGameMachineGunPurchased', 'true'); currentWeaponType = WEAPON_MACHINE_GUN; console.log("Purchased Machine Gun."); } }
+                                if (!machineGunPurchased) { if (total_coins >= machineGunCost) { total_coins -= machineGunCost; machineGunPurchased = true; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); localStorage.setItem('shootyGameMachineGunPurchased', 'true'); currentWeaponType = WEAPON_MACHINE_GUN; console.log("Purchased Machine Gun."); } }
                                 else { currentWeaponType = WEAPON_MACHINE_GUN; console.log("Equipped Machine Gun."); }
                             }
                             // Equip Standard Gun
@@ -464,15 +565,34 @@
                     }
                     break;
                 case STATE_GAME_OVER: break;
-                case STATE_CONFIRM_RESET: if (confirmYesButton.isHovered) { console.log("Confirmed YES to reset."); console.log("Removing localStorage items..."); try { localStorage.removeItem('shootyGameTotalCoins'); localStorage.removeItem('shootyGameStrengthLevel'); localStorage.removeItem('shootyGameSpeedLevel'); localStorage.removeItem('shootyGameAutoFirePurchased'); localStorage.removeItem('shootyGameBouncyGunPurchased'); localStorage.removeItem('shootyGameShotgunPurchased'); localStorage.removeItem('shootyGameMachineGunPurchased'); console.log("localStorage items removed."); } catch (e) { console.error("Error removing items from localStorage:", e); } console.log("Resetting global variables..."); total_coins = 0; strength_level = 0; speed_level = 0; auto_fire_purchased = false; auto_fire_active = false; bouncyGunPurchased = false; shotgunPurchased = false; machineGunPurchased = false; currentWeaponType = WEAPON_STANDARD; is_admin = false; admin_panel_open = false; cheat_input_buffer = ""; player_lives = PLAYER_MAX_LIVES; current_run_score = 0; console.log("Global variables reset."); console.log("Recalculating derived stats..."); current_player_speed = calculate_player_speed(); current_bullet_damage = calculate_bullet_damage(); console.log("Derived stats recalculated."); console.log("Data reset complete. Reloading..."); location.reload(); } else if (confirmNoButton.isHovered) { console.log("Cancelled reset."); current_state = STATE_MENU; } break;
+                case STATE_CONFIRM_RESET: if (confirmYesButton.isHovered) { console.log("Confirmed YES to reset."); console.log("Removing localStorage items..."); try { localStorage.removeItem('shootyGameTotalCoins'); localStorage.removeItem('shootyGameStrengthLevel'); localStorage.removeItem('shootyGameSpeedLevel'); localStorage.removeItem('shootyGameAutoFirePurchased'); localStorage.removeItem('shootyGameBouncyGunPurchased'); localStorage.removeItem('shootyGameShotgunPurchased'); localStorage.removeItem('shootyGameMachineGunPurchased'); localStorage.removeItem('shootyGameCurrentWave'); /* Remove wave data */ console.log("localStorage items removed."); } catch (e) { console.error("Error removing items from localStorage:", e); } console.log("Resetting global variables..."); total_coins = 0; /*strength_level = 0;*/ speed_level = 0; auto_fire_purchased = false; auto_fire_active = false; bouncyGunPurchased = false; shotgunPurchased = false; machineGunPurchased = false; currentWeaponType = WEAPON_STANDARD; saved_wave = 1; current_difficulty = DIFFICULTY_EASY; is_admin = false; admin_panel_open = false; cheat_input_buffer = ""; player_lives = PLAYER_MAX_LIVES; current_run_score = 0; console.log("Global variables reset."); console.log("Recalculating derived stats..."); current_player_speed = calculate_player_speed(); current_bullet_damage = BASE_BULLET_DAMAGE; console.log("Derived stats recalculated."); console.log("Data reset complete. Reloading..."); location.reload(); } else if (confirmNoButton.isHovered) { console.log("Cancelled reset."); current_state = STATE_MENU; } break;
              }
          }
 
         // --- p5.js Setup Function ---
         function setup() {
-            createCanvas(600, 400); htmlCoinSound = document.getElementById('coin-sound'); playButton.x = width/2 - playButton.w/2; playButton.y = height/2 - playButton.h/2 - 40; resetButton.x = width/2 - resetButton.w/2; resetButton.y = playButton.y + playButton.h + 15; current_state = STATE_MENU; player_lives = PLAYER_MAX_LIVES; is_admin = false; admin_panel_open = false; cheat_input_buffer = ""; textAlign(CENTER, CENTER);
+            createCanvas(600, 400); htmlCoinSound = document.getElementById('coin-sound');
+            // Menu Buttons
+            playButton.x = width/2 - playButton.w/2;
+            playButton.y = height/2 - playButton.h/2 - 40;
+            resetButton.x = width/2 - resetButton.w/2;
+            resetButton.y = playButton.y + playButton.h + 15;
+            // Load/New Buttons
+            loadGameButton.x = width/2 - loadGameButton.w/2;
+            loadGameButton.y = height/2 - loadGameButton.h/2 - 30; // Position Load button higher
+            newGameButton.x = width/2 - newGameButton.w/2;
+            newGameButton.y = loadGameButton.y + loadGameButton.h + 20; // Position New Game below Load
+            // Difficulty Buttons
+            easyModeButton.x = width/2 - easyModeButton.w/2;
+            easyModeButton.y = height/2 - easyModeButton.h/2 - 30;
+            hardModeButton.x = width/2 - hardModeButton.w/2;
+            hardModeButton.y = easyModeButton.y + easyModeButton.h + 20;
+
+            current_state = STATE_MENU; player_lives = PLAYER_MAX_LIVES; is_admin = false; admin_panel_open = false; cheat_input_buffer = ""; textAlign(CENTER, CENTER);
             shopVisibleHeight = height - shopVisibleStartY - 50;
-            console.log("p5.js Game Setup Complete."); console.log("Initial Stats - StrLvl:", strength_level, "SpdLvl:", speed_level, "Coins:", total_coins, "AutoFire:", auto_fire_purchased, "BouncyGun:", bouncyGunPurchased, "Shotgun:", shotgunPurchased, "MG:", machineGunPurchased, "Lives:", player_lives);
+            // Load saved data
+            saved_wave = parseInt(localStorage.getItem('shootyGameCurrentWave') || '1', 10); // Load saved wave
+            console.log("p5.js Game Setup Complete."); console.log("Initial Stats - SpdLvl:", speed_level, "Coins:", total_coins, "AutoFire:", auto_fire_purchased, "BouncyGun:", bouncyGunPurchased, "Shotgun:", shotgunPurchased, "MG:", machineGunPurchased, "Lives:", player_lives, "SavedWave:", saved_wave);
          }
 
         // --- p5.js Draw Function ---
@@ -483,31 +603,39 @@
             let effectiveMouseY = mouseY - shopVisibleStartY + shopScrollY;
             let mouseInShopArea = current_state === STATE_SHOP && mouseX > 0 && mouseX < width && mouseY > shopVisibleStartY && mouseY < shopVisibleStartY + shopVisibleHeight;
 
-            if (current_state === STATE_MENU) { playButton.isHovered = !admin_panel_open && (mouseX > playButton.x && mouseX < playButton.x + playButton.w && mouseY > playButton.y && mouseY < playButton.y + playButton.h); resetButton.isHovered = !admin_panel_open && (mouseX > resetButton.x && mouseX < resetButton.x + resetButton.w && mouseY > resetButton.y && mouseY < resetButton.y + resetButton.h); } else { playButton.isHovered = false; resetButton.isHovered = false; }
-            if (current_state === STATE_SHOP) {
+            // Reset hover states
+            playButton.isHovered = false; resetButton.isHovered = false; loadGameButton.isHovered = false; newGameButton.isHovered = false; easyModeButton.isHovered = false; hardModeButton.isHovered = false; /*strBuyButton.isHovered = false;*/ spdBuyButton.isHovered = false; buyLifeButton.isHovered = false; autoBuyButton.isHovered = false; standardGunEquipButton.isHovered = false; bouncyGunBuyButton.isHovered = false; shotgunBuyButton.isHovered = false; machineGunBuyButton.isHovered = false; confirmYesButton.isHovered = false; confirmNoButton.isHovered = false;
+
+            // Check hover based on current state
+            if (current_state === STATE_MENU) { playButton.isHovered = !admin_panel_open && (mouseX > playButton.x && mouseX < playButton.x + playButton.w && mouseY > playButton.y && mouseY < playButton.y + playButton.h); resetButton.isHovered = !admin_panel_open && (mouseX > resetButton.x && mouseX < resetButton.x + resetButton.w && mouseY > resetButton.y && mouseY < resetButton.y + resetButton.h); }
+            else if (current_state === STATE_LOAD_OR_NEW) {
+                 if (saved_wave > 1) { loadGameButton.isHovered = !admin_panel_open && (mouseX > loadGameButton.x && mouseX < loadGameButton.x + loadGameButton.w && mouseY > loadGameButton.y && mouseY < loadGameButton.y + loadGameButton.h); }
+                 newGameButton.isHovered = !admin_panel_open && (mouseX > newGameButton.x && mouseX < newGameButton.x + newGameButton.w && mouseY > newGameButton.y && mouseY < newGameButton.y + newGameButton.h);
+            } else if (current_state === STATE_DIFFICULTY_SELECT) {
+                 easyModeButton.isHovered = !admin_panel_open && (mouseX > easyModeButton.x && mouseX < easyModeButton.x + easyModeButton.w && mouseY > easyModeButton.y && mouseY < easyModeButton.y + easyModeButton.h);
+                 hardModeButton.isHovered = !admin_panel_open && (mouseX > hardModeButton.x && mouseX < hardModeButton.x + hardModeButton.w && mouseY > hardModeButton.y && mouseY < hardModeButton.y + hardModeButton.h);
+            } else if (current_state === STATE_SHOP) {
                 // Determine button active states before checking hover
-                strBuyButton.isActive = total_coins >= get_strength_cost();
-                spdBuyButton.isActive = total_coins >= get_speed_cost();
-                buyLifeButton.isActive = total_coins >= BUY_LIFE_COST; // Removed max lives check here
-                autoBuyButton.isActive = !auto_fire_purchased && total_coins >= AUTO_FIRE_COST;
-                bouncyGunBuyButton.isActive = (!bouncyGunPurchased && total_coins >= BOUNCY_GUN_COST) || (bouncyGunPurchased && currentWeaponType !== WEAPON_BOUNCY);
-                shotgunBuyButton.isActive = (!shotgunPurchased && total_coins >= SHOTGUN_COST) || (shotgunPurchased && currentWeaponType !== WEAPON_SHOTGUN);
-                machineGunBuyButton.isActive = (!machineGunPurchased && total_coins >= MACHINE_GUN_COST) || (machineGunPurchased && currentWeaponType !== WEAPON_MACHINE_GUN);
+                // strBuyButton.isActive = total_coins >= getShopStrengthCost(); // REMOVED
+                spdBuyButton.isActive = total_coins >= getShopSpeedCost();
+                buyLifeButton.isActive = total_coins >= getShopBuyLifeCost();
+                autoBuyButton.isActive = !auto_fire_purchased && total_coins >= getShopAutoFireCost();
+                bouncyGunBuyButton.isActive = (!bouncyGunPurchased && total_coins >= getShopBouncyGunCost()) || (bouncyGunPurchased && currentWeaponType !== WEAPON_BOUNCY);
+                shotgunBuyButton.isActive = (!shotgunPurchased && total_coins >= getShopShotgunCost()) || (shotgunPurchased && currentWeaponType !== WEAPON_SHOTGUN);
+                machineGunBuyButton.isActive = (!machineGunPurchased && total_coins >= getShopMachineGunCost()) || (machineGunPurchased && currentWeaponType !== WEAPON_MACHINE_GUN);
                 standardGunEquipButton.isActive = currentWeaponType !== WEAPON_STANDARD;
 
                 // Check hover (only if button is potentially clickable)
-                strBuyButton.isHovered = mouseInShopArea && strBuyButton.isActive && !admin_panel_open && (mouseX > strBuyButton.x && mouseX < strBuyButton.x + strBuyButton.w && effectiveMouseY > strBuyButton.y && effectiveMouseY < strBuyButton.y + strBuyButton.h);
+                // strBuyButton.isHovered = mouseInShopArea && strBuyButton.isActive && !admin_panel_open && (mouseX > strBuyButton.x && mouseX < strBuyButton.x + strBuyButton.w && effectiveMouseY > strBuyButton.y && effectiveMouseY < strBuyButton.y + strBuyButton.h); // REMOVED
                 spdBuyButton.isHovered = mouseInShopArea && spdBuyButton.isActive && !admin_panel_open && (mouseX > spdBuyButton.x && mouseX < spdBuyButton.x + spdBuyButton.w && effectiveMouseY > spdBuyButton.y && effectiveMouseY < spdBuyButton.y + spdBuyButton.h);
-                buyLifeButton.isHovered = mouseInShopArea && buyLifeButton.isActive && !admin_panel_open && (mouseX > buyLifeButton.x && mouseX < buyLifeButton.x + buyLifeButton.w && effectiveMouseY > buyLifeButton.y && effectiveMouseY < buyLifeButton.y + buyLifeButton.h); // Hover only if active
+                buyLifeButton.isHovered = mouseInShopArea && buyLifeButton.isActive && !admin_panel_open && (mouseX > buyLifeButton.x && mouseX < buyLifeButton.x + buyLifeButton.w && effectiveMouseY > buyLifeButton.y && effectiveMouseY < buyLifeButton.y + buyLifeButton.h);
                 autoBuyButton.isHovered = mouseInShopArea && autoBuyButton.isActive && !admin_panel_open && (mouseX > autoBuyButton.x && mouseX < autoBuyButton.x + autoBuyButton.w && effectiveMouseY > autoBuyButton.y && effectiveMouseY < autoBuyButton.y + autoBuyButton.h);
                 bouncyGunBuyButton.isHovered = mouseInShopArea && bouncyGunBuyButton.isActive && !admin_panel_open && (mouseX > bouncyGunBuyButton.x && mouseX < bouncyGunBuyButton.x + bouncyGunBuyButton.w && effectiveMouseY > bouncyGunBuyButton.y && effectiveMouseY < bouncyGunBuyButton.y + bouncyGunBuyButton.h);
                 shotgunBuyButton.isHovered = mouseInShopArea && shotgunBuyButton.isActive && !admin_panel_open && (mouseX > shotgunBuyButton.x && mouseX < shotgunBuyButton.x + shotgunBuyButton.w && effectiveMouseY > shotgunBuyButton.y && effectiveMouseY < shotgunBuyButton.y + shotgunBuyButton.h);
                 machineGunBuyButton.isHovered = mouseInShopArea && machineGunBuyButton.isActive && !admin_panel_open && (mouseX > machineGunBuyButton.x && mouseX < machineGunBuyButton.x + machineGunBuyButton.w && effectiveMouseY > machineGunBuyButton.y && effectiveMouseY < machineGunBuyButton.y + machineGunBuyButton.h);
                 standardGunEquipButton.isHovered = mouseInShopArea && standardGunEquipButton.isActive && !admin_panel_open && (mouseX > standardGunEquipButton.x && mouseX < standardGunEquipButton.x + standardGunEquipButton.w && effectiveMouseY > standardGunEquipButton.y && effectiveMouseY < standardGunEquipButton.y + standardGunEquipButton.h);
 
-                 // Removed placeholderUpgradeButton
-            } else { strBuyButton.isHovered = false; strBuyButton.isActive = false; spdBuyButton.isHovered = false; spdBuyButton.isActive = false; buyLifeButton.isHovered = false; buyLifeButton.isActive = false; autoBuyButton.isHovered = false; autoBuyButton.isActive = false; bouncyGunBuyButton.isHovered = false; bouncyGunBuyButton.isActive = false; shotgunBuyButton.isHovered = false; shotgunBuyButton.isActive = false; machineGunBuyButton.isHovered = false; machineGunBuyButton.isActive = false; standardGunEquipButton.isHovered = false; standardGunEquipButton.isActive = false; /*placeholderUpgradeButton.isHovered = false;*/}
-            if (current_state === STATE_CONFIRM_RESET) { confirmYesButton.isHovered = (mouseX > confirmYesButton.x && mouseX < confirmYesButton.x + confirmYesButton.w && mouseY > confirmYesButton.y && mouseY < confirmYesButton.y + confirmYesButton.h); confirmNoButton.isHovered = (mouseX > confirmNoButton.x && mouseX < confirmNoButton.x + confirmNoButton.w && mouseY > confirmNoButton.y && mouseY < confirmNoButton.y + confirmNoButton.h); } else { confirmYesButton.isHovered = false; confirmNoButton.isHovered = false; }
+            } else if (current_state === STATE_CONFIRM_RESET) { confirmYesButton.isHovered = (mouseX > confirmYesButton.x && mouseX < confirmYesButton.x + confirmYesButton.w && mouseY > confirmYesButton.y && mouseY < confirmYesButton.y + confirmYesButton.h); confirmNoButton.isHovered = (mouseX > confirmNoButton.x && mouseX < confirmNoButton.x + confirmNoButton.w && mouseY > confirmNoButton.y && mouseY < confirmNoButton.y + confirmNoButton.h); }
 
             if (isAudioSetup && menuSequence) { if (current_state === STATE_MENU && Tone.Transport.state !== 'started') { Tone.Transport.start(); menuSequence.start(0); console.log("Menu music started."); } else if (current_state !== STATE_MENU && Tone.Transport.state === 'started') { menuSequence.stop(); Tone.Transport.stop(); console.log("Menu music stopped."); } }
             if (current_state === STATE_CONFIRM_RESET) { background(MENU_BG_COLOR[0], MENU_BG_COLOR[1], MENU_BG_COLOR[2], 150); fill(MENU_TITLE_COLOR[0], MENU_TITLE_COLOR[1], MENU_TITLE_COLOR[2], 100); textSize(52); textAlign(CENTER, CENTER); text("Shooty Game", width / 2, height * 0.25); fill(BUTTON_PLAY_COLOR[0], BUTTON_PLAY_COLOR[1], BUTTON_PLAY_COLOR[2], 100); noStroke(); rect(playButton.x, playButton.y, playButton.w, playButton.h, 8); fill(BUTTON_RESET_COLOR[0], BUTTON_RESET_COLOR[1], BUTTON_RESET_COLOR[2], 100); rect(resetButton.x, resetButton.y, resetButton.w, resetButton.h, 8); }
@@ -524,6 +652,61 @@
                 case STATE_MENU:
                      background(MENU_BG_COLOR); fill(MENU_TITLE_COLOR); textSize(52); textAlign(CENTER, CENTER); text("Shooty Game", width / 2, height * 0.25); let buttonCornerRadius = 8; fill(playButton.isHovered ? BUTTON_PLAY_HOVER : BUTTON_PLAY_COLOR); noStroke(); rect(playButton.x, playButton.y, playButton.w, playButton.h, buttonCornerRadius); fill(BUTTON_TEXT_COLOR); textSize(24); textAlign(CENTER, CENTER); text("Play", playButton.x + playButton.w / 2, playButton.y + playButton.h / 2); fill(resetButton.isHovered ? BUTTON_RESET_HOVER : BUTTON_RESET_COLOR); noStroke(); rect(resetButton.x, resetButton.y, resetButton.w, resetButton.h, buttonCornerRadius); fill(BUTTON_TEXT_COLOR); textSize(18); textAlign(CENTER, CENTER); let resetText = "Reset Data "; let skullEmoji = "💀"; let totalResetWidth = textWidth(resetText) + textWidth(skullEmoji); let resetTextX = resetButton.x + (resetButton.w / 2) - (totalResetWidth / 2) + (textWidth(resetText) / 2); let skullX = resetTextX + textWidth(resetText) / 2 + textWidth(skullEmoji) / 2 + 2; text(resetText, resetTextX, resetButton.y + resetButton.h / 2); text(skullEmoji, skullX, resetButton.y + resetButton.h / 2); if (is_admin) { fill(MENU_ADMIN_TEXT_COLOR); textSize(14); textAlign(CENTER, BOTTOM); text("ADMIN MODE ACTIVE (P to open panel)", width / 2, height - 10); }
                      break;
+
+                 case STATE_LOAD_OR_NEW: // NEW Draw Logic
+                     background(MENU_BG_COLOR);
+                     fill(MENU_TITLE_COLOR); textSize(40); textAlign(CENTER, CENTER);
+                     text("Start Game", width / 2, height * 0.25);
+
+                     textSize(24); textAlign(CENTER, CENTER); fill(BUTTON_TEXT_COLOR);
+                     let buttonRadiusLON = 8;
+                     let currentYLON = height / 2 - 30; // Starting Y
+
+                     // Adjust Y if Load button isn't shown
+                     if (saved_wave <= 1) {
+                         currentYLON = height / 2 - newGameButton.h / 2; // Center New Game button
+                     }
+
+                     // Draw Load Game button only if save exists
+                     if (saved_wave > 1) {
+                         loadGameButton.y = currentYLON;
+                         fill(loadGameButton.isHovered ? BUTTON_LOAD_HOVER : BUTTON_LOAD_COLOR); noStroke();
+                         rect(loadGameButton.x, loadGameButton.y, loadGameButton.w, loadGameButton.h, buttonRadiusLON);
+                         fill(BUTTON_TEXT_COLOR);
+                         text(`Load Game (Wave ${saved_wave})`, loadGameButton.x + loadGameButton.w / 2, loadGameButton.y + loadGameButton.h / 2);
+                         currentYLON += loadGameButton.h + 20; // Move Y down for next button
+                     }
+
+                     // Draw New Game button
+                     newGameButton.y = currentYLON;
+                     fill(newGameButton.isHovered ? BUTTON_NEW_HOVER : BUTTON_NEW_COLOR); noStroke();
+                     rect(newGameButton.x, newGameButton.y, newGameButton.w, newGameButton.h, buttonRadiusLON);
+                     fill(BUTTON_TEXT_COLOR);
+                     text("New Game", newGameButton.x + newGameButton.w / 2, newGameButton.y + newGameButton.h / 2);
+                     break;
+
+                 case STATE_DIFFICULTY_SELECT: // NEW Draw Logic
+                     background(MENU_BG_COLOR);
+                     fill(MENU_TITLE_COLOR); textSize(40); textAlign(CENTER, CENTER);
+                     text("Select Difficulty", width / 2, height * 0.25);
+
+                     textSize(24); textAlign(CENTER, CENTER); fill(BUTTON_TEXT_COLOR);
+                     let diffButtonRadius = 8;
+
+                     // Draw Easy Button
+                     fill(easyModeButton.isHovered ? BUTTON_EASY_HOVER : BUTTON_EASY_COLOR); noStroke();
+                     rect(easyModeButton.x, easyModeButton.y, easyModeButton.w, easyModeButton.h, diffButtonRadius);
+                     fill(BUTTON_TEXT_COLOR);
+                     text("Easy", easyModeButton.x + easyModeButton.w / 2, easyModeButton.y + easyModeButton.h / 2);
+
+                     // Draw Hard Button (Simplified Text)
+                     fill(hardModeButton.isHovered ? BUTTON_HARD_HOVER : BUTTON_HARD_COLOR); noStroke();
+                     rect(hardModeButton.x, hardModeButton.y, hardModeButton.w, hardModeButton.h, diffButtonRadius);
+                     fill(BUTTON_TEXT_COLOR);
+                     text("Hard", hardModeButton.x + hardModeButton.w / 2, hardModeButton.y + hardModeButton.h / 2); // Centered text
+
+                     break;
+
 
                 case STATE_SHOP:
                      background(SHOP_BG_COLOR); fill(SHOP_TEXT_COLOR); textSize(SHOP_TITLE_TEXT_SIZE); textAlign(CENTER, TOP); if (wave_completed_flag) { text(`Wave ${current_wave} Complete!`, width / 2, 20); } else { text("SHOP", width / 2, 20); }
@@ -546,7 +729,7 @@
                          let isLife = itemType === 'life';
                          let isPurchased = false;
                          let isEquipped = false;
-                        //  let atMax = false; // Removed 'atMax' check for lives
+                         // let atMax = false; // Removed 'atMax' check for lives
 
                          // Determine purchase/equip/max status
                          if (isWeapon) {
@@ -613,10 +796,10 @@
                      fill(SHOP_TEXT_COLOR); textSize(SHOP_CATEGORY_HEADER_SIZE); textAlign(LEFT, TOP);
                      if (currentContentY + SHOP_CATEGORY_HEADER_SIZE > shopScrollY && currentContentY < shopScrollY + shopVisibleHeight) { text("--- Upgrades ---", headerX, currentContentY); }
                      currentContentY += SHOP_CATEGORY_HEADER_SIZE + SHOP_HEADER_MARGIN_BOTTOM;
-                     let strCost = get_strength_cost(); let strDamage = calculate_bullet_damage(); currentContentY = drawShopItemCard(currentContentY, `Strength Lvl: ${strength_level} (Dmg: ${strDamage})`, `Cost: ${strCost}`, strCost, strBuyButton, "Upgrade");
-                     let spdCost = get_speed_cost(); let spdValue = calculate_player_speed(); currentContentY = drawShopItemCard(currentContentY, `Speed Lvl: ${speed_level} (Val: ${spdValue.toFixed(2)})`, `Cost: ${spdCost}`, spdCost, spdBuyButton, "Upgrade");
+                     // Strength upgrade removed
+                     let spdCost = getShopSpeedCost(); let spdValue = calculate_player_speed(); currentContentY = drawShopItemCard(currentContentY, `Speed Lvl: ${speed_level} (Val: ${spdValue.toFixed(2)})`, `Cost: ${spdCost}`, spdCost, spdBuyButton, "Upgrade");
                      // Buy Life Item
-                     currentContentY = drawShopItemCard(currentContentY, `Buy 1 Life (Current: ${player_lives})`, `Cost: ${BUY_LIFE_COST}`, BUY_LIFE_COST, buyLifeButton, "Buy", 'life');
+                     let lifeCost = getShopBuyLifeCost(); currentContentY = drawShopItemCard(currentContentY, `Buy 1 Life (Current: ${player_lives})`, `Cost: ${lifeCost}`, lifeCost, buyLifeButton, "Buy", 'life');
 
                      // --- Weapons Category ---
                      currentContentY += SHOP_CATEGORY_MARGIN_TOP - SHOP_CARD_MARGIN; fill(SHOP_TEXT_COLOR); textSize(SHOP_CATEGORY_HEADER_SIZE); textAlign(LEFT, TOP);
@@ -624,10 +807,10 @@
                      currentContentY += SHOP_CATEGORY_HEADER_SIZE + SHOP_HEADER_MARGIN_BOTTOM;
 
                      currentContentY = drawShopItemCard(currentContentY, "Standard Gun", "", 0, standardGunEquipButton, "Equip", 'weapon', WEAPON_STANDARD);
-                     let bouncyCostText = bouncyGunPurchased ? "" : `Cost: ${BOUNCY_GUN_COST}`; currentContentY = drawShopItemCard(currentContentY, "Bouncy Gun", bouncyCostText, BOUNCY_GUN_COST, bouncyGunBuyButton, "Buy", 'weapon', WEAPON_BOUNCY);
-                     let shotgunCostText = shotgunPurchased ? "" : `Cost: ${SHOTGUN_COST}`; currentContentY = drawShopItemCard(currentContentY, "Shotgun", shotgunCostText, SHOTGUN_COST, shotgunBuyButton, "Buy", 'weapon', WEAPON_SHOTGUN);
-                     let machineGunCostText = machineGunPurchased ? "" : `Cost: ${MACHINE_GUN_COST}`; currentContentY = drawShopItemCard(currentContentY, "Machine Gun", machineGunCostText, MACHINE_GUN_COST, machineGunBuyButton, "Buy", 'weapon', WEAPON_MACHINE_GUN);
-                     let autoCostText = auto_fire_purchased ? "(Press Q to toggle)" : `Cost: ${AUTO_FIRE_COST}`; currentContentY = drawShopItemCard(currentContentY, "Auto-Fire Ability", autoCostText, AUTO_FIRE_COST, autoBuyButton, "Buy", 'ability');
+                     let bouncyCost = getShopBouncyGunCost(); let bouncyCostText = bouncyGunPurchased ? "" : `Cost: ${bouncyCost}`; currentContentY = drawShopItemCard(currentContentY, "Bouncy Gun", bouncyCostText, bouncyCost, bouncyGunBuyButton, "Buy", 'weapon', WEAPON_BOUNCY);
+                     let shotgunCost = getShopShotgunCost(); let shotgunCostText = shotgunPurchased ? "" : `Cost: ${shotgunCost}`; currentContentY = drawShopItemCard(currentContentY, "Shotgun", shotgunCostText, shotgunCost, shotgunBuyButton, "Buy", 'weapon', WEAPON_SHOTGUN);
+                     let machineGunCost = getShopMachineGunCost(); let machineGunCostText = machineGunPurchased ? "" : `Cost: ${machineGunCost}`; currentContentY = drawShopItemCard(currentContentY, "Machine Gun", machineGunCostText, machineGunCost, machineGunBuyButton, "Buy", 'weapon', WEAPON_MACHINE_GUN);
+                     let autoFireCost = getShopAutoFireCost(); let autoCostText = auto_fire_purchased ? "(Press Q to toggle)" : `Cost: ${autoFireCost}`; currentContentY = drawShopItemCard(currentContentY, "Auto-Fire Ability", autoCostText, autoFireCost, autoBuyButton, "Buy", 'ability');
                      // Removed second weapon placeholder
 
                      pop(); // --- End Scrolling Transformation ---
@@ -643,7 +826,7 @@
 
                 case STATE_PLAYING:
                     background(BACKGROUND_COLOR); if (player) { player.update(); check_player_powerup_collision(player, powerups); } if (time_stop_active && current_time_ms >= time_stop_end_time_ms) { time_stop_active = false; console.log("Time Stop ended."); } if (auto_fire_active && player && currentWeaponType !== WEAPON_MACHINE_GUN) { auto_aim_target = find_closest_enemy(player.x, player.y, enemies); } else { auto_aim_target = null; } // Auto-aim only for non-MG auto-fire
-                    if (!time_stop_active && !admin_panel_open) { let elapsed_wave_time_sec = (current_time_ms - wave_timer_start_ms) / 1000.0; if (elapsed_wave_time_sec >= WAVE_DURATION_SEC) { console.log(`Wave ${current_wave} ended successfully.`); console.log(`Adding score ${current_run_score} to total coins ${total_coins}`); total_coins += current_run_score; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); current_run_score = 0; console.log(`New total coins: ${total_coins}`); wave_completed_flag = true; bullets = []; powerups = []; homing_shot_ready = false; explosionParticles = []; shopScrollY = 0; current_state = STATE_SHOP; return; } else { if (current_time_ms - last_timestop_chance_check_time_ms >= TIME_STOP_CHECK_INTERVAL_MS) { if (!time_stop_ready && !time_stop_active) { if (random() < TIME_STOP_CHANCE) { time_stop_ready = true; console.log("Time Stop Ready!"); } } last_timestop_chance_check_time_ms += TIME_STOP_CHECK_INTERVAL_MS; } for (let i = bullets.length - 1; i >= 0; i--) { if (bullets[i]) { bullets[i].update(); if (bullets[i].is_offscreen() || bullets[i].isDead) { bullets.splice(i, 1); } } else { bullets.splice(i, 1); } } for (let i = enemies.length - 1; i >= 0; i--) { if (enemies[i]) { enemies[i].update(player?.x, player?.y); } else { enemies.splice(i, 1); } } spawn_timer++; if (spawn_timer >= current_enemy_spawn_rate) { spawn_enemy(); spawn_timer = 0; } if (current_time_ms - last_blue_spawn_time_ms >= current_blue_spawn_interval_sec * 1000) { spawn_blue_enemy(); last_blue_spawn_time_ms = current_time_ms; } if (current_time_ms - last_powerup_spawn_time_ms >= POWERUP_SPAWN_INTERVAL_SEC * 1000) { spawn_powerup(); last_powerup_spawn_time_ms = current_time_ms; }
+                    if (!time_stop_active && !admin_panel_open) { let elapsed_wave_time_sec = (current_time_ms - wave_timer_start_ms) / 1000.0; if (elapsed_wave_time_sec >= WAVE_DURATION_SEC) { console.log(`Wave ${current_wave} ended successfully.`); console.log(`Adding score ${current_run_score} to total coins ${total_coins}`); total_coins += current_run_score; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); localStorage.setItem('shootyGameCurrentWave', (current_wave + 1).toString()); /* Save next wave */ console.log(`Saved next wave: ${current_wave + 1}`); current_run_score = 0; console.log(`New total coins: ${total_coins}`); wave_completed_flag = true; bullets = []; powerups = []; homing_shot_ready = false; explosionParticles = []; shopScrollY = 0; current_state = STATE_SHOP; return; } else { if (current_time_ms - last_timestop_chance_check_time_ms >= TIME_STOP_CHECK_INTERVAL_MS) { if (!time_stop_ready && !time_stop_active) { if (random() < TIME_STOP_CHANCE) { time_stop_ready = true; console.log("Time Stop Ready!"); } } last_timestop_chance_check_time_ms += TIME_STOP_CHECK_INTERVAL_MS; } for (let i = bullets.length - 1; i >= 0; i--) { if (bullets[i]) { bullets[i].update(); if (bullets[i].is_offscreen() || bullets[i].isDead) { bullets.splice(i, 1); } } else { bullets.splice(i, 1); } } for (let i = enemies.length - 1; i >= 0; i--) { if (enemies[i]) { enemies[i].update(player?.x, player?.y); } else { enemies.splice(i, 1); } } spawn_timer++; if (spawn_timer >= current_enemy_spawn_rate) { spawn_enemy(); spawn_timer = 0; } if (current_time_ms - last_blue_spawn_time_ms >= current_blue_spawn_interval_sec * 1000) { spawn_blue_enemy(); last_blue_spawn_time_ms = current_time_ms; } if (current_time_ms - last_powerup_spawn_time_ms >= POWERUP_SPAWN_INTERVAL_SEC * 1000) { spawn_powerup(); last_powerup_spawn_time_ms = current_time_ms; }
 
                         // --- Firing Logic ---
                         let ctm = millis();
@@ -699,7 +882,7 @@
                     } }
                     for (let i = explosionParticles.length - 1; i >= 0; i--) { explosionParticles[i].update(); explosionParticles[i].display(); if (explosionParticles[i].isDead()) { explosionParticles.splice(i, 1); } }
                     for (let i = bullets.length - 1; i >= 0; i--) { if (!bullets[i]) continue; let bullet = bullets[i]; let bullet_removed = false; for (let j = enemies.length - 1; j >= 0; j--) { if (!enemies[j]) continue; let enemy = enemies[j]; let distSq = (bullet.x - enemy.x)**2 + (bullet.y - enemy.y)**2; let radiiSq = (bullet.radius + enemy.radius)**2; if (distSq <= radiiSq) { let damageToDeal = 0; let isBouncy = bullet instanceof BouncyBullet; if (isBouncy) { damageToDeal = bullet.damage; } else { damageToDeal = current_bullet_damage; } if (enemy.take_damage(damageToDeal)) { current_run_score += enemy.reward; if (htmlCoinSound) { htmlCoinSound.currentTime = 0; htmlCoinSound.play(); } for (let k = 0; k < EXPLOSION_PARTICLE_COUNT; k++) { explosionParticles.push(new ExplosionParticle(enemy.x, enemy.y, enemy.color)); } if (enemy === auto_aim_target) { auto_aim_target = null; } enemies.splice(j, 1); } if (isBouncy) { bullet.handleEnemyBounce(); } else { if (!bullet_removed) { bullets.splice(i, 1); bullet_removed = true; break; } } } } }
-                    if (player && !playerIsHit) { for (let j = enemies.length - 1; j >= 0; j--) { if (!enemies[j]) continue; let enemy = enemies[j]; let distSq = (enemy.x - player.x)**2 + (enemy.y - player.y)**2; let radiiSq = (enemy.radius + player.radius)**2; if (distSq <= radiiSq) { if (enemy.hp > 0) { let damageAmount = enemy.hp; player_lives -= damageAmount; console.log(`Player hit by enemy with ${enemy.hp} HP! Lives: ${player_lives}`); playerIsHit = true; playerHitTimer = PLAYER_HIT_DURATION; enemies.splice(j, 1); if (player_lives <= 0) { console.log("GAME OVER!"); keys_pressed.clear(); auto_aim_target = null; total_coins += current_run_score; localStorage.setItem('shootyGameTotalCoins', total_coins.toString()); explosionParticles = []; current_state = STATE_GAME_OVER; break; } } else { enemies.splice(j, 1); } } } }
+                    if (player && !playerIsHit) { for (let j = enemies.length - 1; j >= 0; j--) { if (!enemies[j]) continue; let enemy = enemies[j]; let distSq = (enemy.x - player.x)**2 + (enemy.y - player.y)**2; let radiiSq = (enemy.radius + player.radius)**2; if (distSq <= radiiSq) { if (enemy.hp > 0) { let damageAmount = enemy.hp; player_lives -= damageAmount; console.log(`Player hit by enemy with ${enemy.hp} HP! Lives: ${player_lives}`); playerIsHit = true; playerHitTimer = PLAYER_HIT_DURATION; enemies.splice(j, 1); if (player_lives <= 0) { console.log("GAME OVER!"); keys_pressed.clear(); auto_aim_target = null; total_coins += current_run_score; localStorage.removeItem('shootyGameTotalCoins'); /* Remove coins on game over */ localStorage.removeItem('shootyGameCurrentWave'); /* Remove wave data on game over */ saved_wave = 1; /* Reset loaded variable */ console.log("Game Over. Removed saved coin and wave data."); explosionParticles = []; current_state = STATE_GAME_OVER; break; } } else { enemies.splice(j, 1); } } } }
 
                     // --- Draw Laser Sight (Handles all weapons) ---
                     if (player && !admin_panel_open) {
@@ -764,7 +947,7 @@
                 fill(ADMIN_PANEL_BG_COLOR); rect(0, 0, width, height); fill(ADMIN_PANEL_TEXT_COLOR); textAlign(CENTER, TOP); textSize(24); text("--- ADMIN PANEL ---", width / 2, 30);
                 textAlign(LEFT, TOP); textSize(16); let panelY = ADMIN_PANEL_Y_START; let labelX = ADMIN_PANEL_X_MARGIN; let valueX = labelX + ADMIN_PANEL_VALUE_X_OFFSET;
                 function drawAdminItem(y, keyDesc, currentValue) { text(keyDesc, labelX, y); text(currentValue, valueX, y); return y + ADMIN_PANEL_LINE_HEIGHT; }
-                panelY = drawAdminItem(panelY, "[1/S+1] Strength:", `${strength_level} (Dmg: ${calculate_bullet_damage()})`);
+                // panelY = drawAdminItem(panelY, "[1/S+1] Strength:", `${strength_level} (Dmg: ${calculate_bullet_damage()})`); // REMOVED
                 panelY = drawAdminItem(panelY, "[2/S+2] Speed:", `${speed_level} (Val: ${calculate_player_speed().toFixed(2)})`);
                 panelY = drawAdminItem(panelY, "[3] Toggle Auto-Fire:", `${auto_fire_purchased}`);
                 panelY = drawAdminItem(panelY, "[4] Add 1k Coins:", `${total_coins}`);
